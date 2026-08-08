@@ -6,6 +6,7 @@
          "../rules/style/definition-length.rkt" "../rules/style/file-length.rkt"
          "../rules/definition/unused.rkt" "../rules/reachability/undefined.rkt"
          "../rules/reachability/unused-require.rkt" "../rules/export/unused.rkt"
+         "../rules/module/require-provide.rkt"
          (for-syntax racket/base))
 (provide run)
 (module+ main (run (vector->list (current-command-line-arguments))))
@@ -33,10 +34,11 @@
     (list style/line-length style/trailing-whitespace style/newline-at-eof
           style/sexpr-depth style/definition-length style/file-length
           definition/unused reachability/undefined reachability/unused-require
-          export/unused))
+          export/unused module/require-provide))
   (define default-config (hash 'definition/unused (hash 'enabled #f)
                                'reachability/unused-require (hash 'enabled #f)
-                               'export/unused (hash 'enabled #f)))
+                               'export/unused (hash 'enabled #f)
+                               'module/require-provide (hash 'enabled #f)))
   (define user-config-file (build-path dir ".racket-linter.rkt"))
   (define user-config
     (if (file-exists? user-config-file)
