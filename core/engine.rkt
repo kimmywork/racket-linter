@@ -55,7 +55,7 @@
     (foldl
       (lambda (rule acc)
         (define enabled? (hash-ref (rule-config-keys rule) 'enabled #t))
-        (if enabled?
+        (if (and enabled? (eq? (rule-layer rule) 'text))
             (append acc ((rule-check rule) #f path))
             acc))
       '()
@@ -71,7 +71,7 @@
                           (foldl
                             (lambda (rule acc)
                               (define enabled? (hash-ref (rule-config-keys rule) 'enabled #t))
-                              (if enabled?
+                              (if (and enabled? (memq (rule-layer rule) '(syntax both)))
                                   (append acc ((rule-check rule) stx path))
                                   acc))
                             '()

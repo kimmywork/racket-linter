@@ -14,6 +14,7 @@
   #:id 'definition/unused
   #:severity 'warning
   #:config-keys (hash)
+  #:layer 'text
   (lambda (stx path)
     (define text (port->string (open-input-file path)))
     (define lines (regexp-split #px"\n" text))

@@ -12,6 +12,7 @@
   #:id 'style/newline-at-eof
   #:severity 'warning
   #:config-keys (hash)
+  #:layer 'text
   (lambda (stx path)
     (define content (call-with-input-file path port->string))
     (define len (string-length content))

@@ -12,6 +12,7 @@
   #:id 'style/trailing-whitespace
   #:severity 'warning
   #:config-keys (hash)
+  #:layer 'text
   (lambda (stx path)
     (define lines (regexp-split #px"\n" (port->string (open-input-file path))))
     (for/fold ([acc '()]) ([line lines] [ln (in-naturals 1)])

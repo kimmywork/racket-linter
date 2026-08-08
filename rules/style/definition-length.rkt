@@ -14,6 +14,7 @@
   #:id 'style/definition-length
   #:severity 'warning
   #:config-keys (hash)
+  #:layer 'text
   (lambda (stx path)
     (define max-length 66)
     (define text (call-with-input-file path port->string))

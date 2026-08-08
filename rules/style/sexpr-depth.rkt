@@ -13,6 +13,7 @@
   #:id 'style/sexpr-depth
   #:severity 'warning
   #:config-keys (hash)
+  #:layer 'syntax
   (lambda (stx path)
     (if (not (syntax? stx))
         '()
