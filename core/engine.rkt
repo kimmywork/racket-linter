@@ -17,7 +17,14 @@
     [run-file (-> (listof rule?) hash? path-string? (listof diagnostic?))]))
 
 (define (safe-lang? lang-str)
-  (member lang-str '("racket" "racket/base") string=?))
+  (member lang-str
+          '("racket" "racket/base" "racket/contract" "racket/contract/base"
+            "racket/class" "racket/date" "racket/dict" "racket/function"
+            "racket/list" "racket/match" "racket/math" "racket/port"
+            "racket/pretty" "racket/require" "racket/set" "racket/string"
+            "racket/vector" "racket/format" "racket/gui" "racket/gui/base"
+            "racket/future" "racket/flonum" "racket/fixnum" "racket/unsafe/ops")
+          string=?))
 
 (define (detect-lang-from-text text)
   (define m (regexp-match #px"^#lang\\s+(\\S+)" text))
