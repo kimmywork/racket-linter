@@ -25,7 +25,23 @@
 
 (define (read-syntax-safe path)
   (with-handlers ([exn? (lambda (e) (list (diagnostic path 1 1 'error 'read-error (exn-message e))))])
-    (list (read-syntax (path->string path) (open-input-file path)))))
+    (define text (call-with-input-file path port->string))
+    (define lang (detect-lang-from-text text))
+    (define text-no-lang
+      (if lang
+          (regexp-replace-first #px"^#lang\\s+\\S+\\s*" text "")
+          text))
+    (list (read-syntax path (open-input-string text-no-lang)))))
+
+(define (regexp-replace-first pattern text replacement)
+  (define positions (regexp-match-positions pattern text))
+  (if positions
+      (let* ([start (caar positions)]
+             [end (cdar positions)]
+             [before (substring text 0 start)]
+             [after (substring text end)])
+        (string-append before replacement after))
+      text))
 
 (define (expand-safe path stx)
   (with-handlers ([exn? (lambda (e) (list (diagnostic path 1 1 'error 'expand-error (exn-message e))))])
