@@ -1,0 +1,28 @@
+# Racket
+compiled/
+*.zo
+*.dep
+
+# Package management
+racket-linter/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
