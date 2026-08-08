@@ -30,7 +30,7 @@
     (eprintf "Error: ~a is not a directory\n" dir)
     (exit 1))
   (define files (find-rkt-files dir))
-  (define rules
+  (define all-rules
     (list style/line-length style/trailing-whitespace style/newline-at-eof
           style/sexpr-depth style/definition-length style/file-length
           definition/unused reachability/undefined reachability/unused-require
@@ -54,6 +54,6 @@
                              v))))
   (define merged-config (merge-configs default-config user-config))
   (define diagnostics
-    (apply append (map (lambda (f) (run-file rules merged-config f)) files)))
+    (apply append (map (lambda (f) (run-file all-rules merged-config f)) files)))
   (print-diagnostics diagnostics)
   (exit (if (null? diagnostics) 0 1)))
