@@ -4,7 +4,7 @@
         "../rules/style/line-length.rkt" "../rules/style/trailing-whitespace.rkt"
         "../rules/style/newline-at-eof.rkt" "../rules/style/sexpr-depth.rkt"
         "../rules/style/definition-length.rkt" "../rules/style/file-length.rkt"
-        "../rules/definition/unused.rkt"
+        "../rules/definition/unused.rkt" "../rules/reachability/undefined.rkt"
         (for-syntax racket/base))
 (provide run)
 (module+ main (run (vector->list (current-command-line-arguments))))
@@ -31,7 +31,7 @@
   (define rules
     (list style/line-length style/trailing-whitespace style/newline-at-eof
           style/sexpr-depth style/definition-length style/file-length
-          definition/unused))
+          definition/unused reachability/undefined))
   (define diagnostics
     (apply append (map (lambda (f) (run-file rules (hash) f)) files)))
   (print-diagnostics diagnostics)
