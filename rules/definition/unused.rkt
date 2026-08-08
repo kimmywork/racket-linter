@@ -15,7 +15,7 @@
   #:severity 'warning
   #:config-keys (hash)
   #:layer 'text
-  (lambda (stx path)
+  (lambda (stx path config)
     (define text (port->string (open-input-file path)))
     (define lines (regexp-split #px"\n" text))
     (for/fold ([acc '()]) ([line lines] [ln (in-naturals 1)])

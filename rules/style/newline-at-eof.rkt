@@ -13,7 +13,7 @@
   #:severity 'warning
   #:config-keys (hash)
   #:layer 'text
-  (lambda (stx path)
+  (lambda (stx path config)
     (define content (call-with-input-file path port->string))
     (define len (string-length content))
     (if (and (> len 0) (equal? (string-ref content (- len 1)) #\newline))

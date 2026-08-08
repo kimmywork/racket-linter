@@ -13,7 +13,7 @@
   #:severity 'warning
   #:config-keys (hash)
   #:layer 'text
-  (lambda (stx path)
+  (lambda (stx path config)
     (define lines (regexp-split #px"\n" (port->string (open-input-file path))))
     (define max-length 102)
     (for/fold ([acc '()]) ([line lines] [ln (in-naturals 1)])

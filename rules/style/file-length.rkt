@@ -14,7 +14,7 @@
   #:severity 'warning
   #:config-keys (hash)
   #:layer 'text
-  (lambda (stx path)
+  (lambda (stx path config)
     (define max-lines 1000)
     (define text (call-with-input-file path port->string))
     (define lines (regexp-split #px"\n" text))

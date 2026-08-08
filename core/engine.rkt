@@ -47,6 +47,12 @@
   (with-handlers ([exn? (lambda (e) (list (diagnostic path 1 1 'error 'expand-error (exn-message e))))])
     (expand stx)))
 
+(define (merge-configs default-config user-config)
+  (for/fold ([result default-config]) ([(k v) (in-hash user-config)])
+    (if (and (hash-has-key? result k) (hash? (hash-ref result k)) (hash? v))
+        (hash-set result k (merge-configs (hash-ref result k) v))
+        (hash-set result k v))))
+
 (define (run-file rules config path)
   (define text (call-with-input-file path port->string))
   (define lang (detect-lang-from-text text))
@@ -54,9 +60,10 @@
   (define text-layer-results
     (foldl
       (lambda (rule acc)
-        (define enabled? (hash-ref (rule-config-keys rule) 'enabled #t))
+        (define merged-config (merge-configs (rule-config-keys rule) (hash-ref config (rule-id rule) (hash))))
+        (define enabled? (hash-ref merged-config 'enabled #t))
         (if (and enabled? (eq? (rule-layer rule) 'text))
-            (append acc ((rule-check rule) #f path))
+            (append acc ((rule-check rule) #f path merged-config))
             acc))
       '()
       rules))
@@ -70,9 +77,10 @@
                   (append text-layer-results
                           (foldl
                             (lambda (rule acc)
-                              (define enabled? (hash-ref (rule-config-keys rule) 'enabled #t))
+                              (define merged-config (merge-configs (rule-config-keys rule) (hash-ref config (rule-id rule) (hash))))
+                              (define enabled? (hash-ref merged-config 'enabled #t))
                               (if (and enabled? (memq (rule-layer rule) '(syntax both)))
-                                  (append acc ((rule-check rule) stx path))
+                                  (append acc ((rule-check rule) stx path merged-config))
                                   acc))
                             '()
                             rules))

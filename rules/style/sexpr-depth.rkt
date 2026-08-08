@@ -14,7 +14,7 @@
   #:severity 'warning
   #:config-keys (hash)
   #:layer 'syntax
-  (lambda (stx path)
+  (lambda (stx path config)
     (if (not (syntax? stx))
         '()
         (let ([max-depth 10])

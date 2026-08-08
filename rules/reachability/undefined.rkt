@@ -18,16 +18,24 @@
   #:severity 'warning
   #:config-keys (hash)
   #:layer 'syntax
-  (lambda (stx path)
+  (lambda (stx path config)
     (define built-ins
-      (set 'define 'define-values 'lambda 'let 'let* 'letrec 'if 'cond 'case
+      (set 'define 'define-values 'define-syntax 'define-syntaxes
+           'lambda 'let 'let* 'letrec 'if 'cond 'case 'match
            'and 'or 'not 'begin 'set! 'quote 'quasiquote 'unquote 'unquote-splicing
            'display 'displayln 'printf 'newline 'list 'cons 'car 'cdr 'cadr 'cddr
            'null? 'pair? 'list? 'eq? 'equal? 'number? 'string? 'symbol? 'boolean?
            '+ '- '* '/ '= '< '> '<= '>= 'remainder 'modulo 'add1 'sub1 'expt 'abs
            'apply 'map 'filter 'foldl 'foldr 'for/list 'for/fold 'in-range 'in-list
+           'for/sum 'for/product 'for/and 'for/or 'for/first 'for/last
            'error 'raise 'with-handlers 'exn? 'exn-message 'exn-continuation-marks
-           'require 'provide 'module 'racket/base 'racket))
+           'require 'provide 'module 'racket/base 'racket
+           'only-in 'except-in 'prefix-in 'rename-in 'file 'for-syntax 'for-template
+           'for-label 'for-meta 'for-space 'all-defined-out 'all-from-out
+           'struct 'struct-out 'define-struct 'type-id 'constructor-id
+           'mutator-id 'accessor-id 'predicate-id
+           'module+ 'submod 'begin-for-syntax 'begin-for-template
+           '#%app '#%datum '#%top '#%top-interaction '#%module-begin))
     (define (is-built-in? name)
       (set-member? built-ins name))
     (define (is-definition? stx)
