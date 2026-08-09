@@ -4,6 +4,7 @@
          "../rules/style/line-length.rkt" "../rules/style/trailing-whitespace.rkt"
          "../rules/style/newline-at-eof.rkt" "../rules/style/sexpr-depth.rkt"
          "../rules/style/definition-length.rkt" "../rules/style/file-length.rkt"
+         "../rules/style/naming-convention.rkt"
          "../rules/definition/unused.rkt" "../rules/reachability/undefined.rkt"
          "../rules/reachability/unused-require.rkt" "../rules/reachability/unused-require-expand.rkt"
          "../rules/export/unused.rkt"
@@ -105,6 +106,7 @@
   (define all-rules
     (list style/line-length style/trailing-whitespace style/newline-at-eof
           style/sexpr-depth style/definition-length style/file-length
+          style/naming-convention
           definition/unused reachability/undefined reachability/unused-require
           reachability/unused-require-expand
           export/unused module/require-provide))
