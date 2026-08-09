@@ -5,7 +5,7 @@
          "../rules/style/newline-at-eof.rkt" "../rules/style/sexpr-depth.rkt"
          "../rules/style/definition-length.rkt" "../rules/style/file-length.rkt"
          "../rules/style/naming-convention.rkt" "../rules/style/require-sort.rkt"
-         "../rules/style/provide-sort.rkt"
+         "../rules/style/provide-sort.rkt" "../rules/style/extract-let.rkt"
          "../rules/definition/unused.rkt" "../rules/reachability/undefined.rkt"
          "../rules/reachability/unused-require.rkt" "../rules/reachability/unused-require-expand.rkt"
          "../rules/export/unused.rkt"
@@ -109,6 +109,7 @@
     (list style/line-length style/trailing-whitespace style/newline-at-eof
           style/sexpr-depth style/definition-length style/file-length
           style/naming-convention style/require-sort style/provide-sort
+          style/extract-let
           definition/unused reachability/undefined reachability/unused-require
           reachability/unused-require-expand
           export/unused module/require-provide
@@ -127,7 +128,10 @@
     (for ([f (in-list files)])
       (format-file f)))
   (define diagnostics
-    (apply append (map (lambda (f) (run-file all-rules merged-config f)) files)))
+    (apply append (map (lambda (f) 
+                         (with-handlers ([exn? (lambda (e) (list))])
+                           (run-file all-rules merged-config f)))
+                       files)))
   ;; Project-level analysis
   (define project-diagnostics (analyze-project files))
   (define all-diagnostics (append diagnostics project-diagnostics))
