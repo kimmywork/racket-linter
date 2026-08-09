@@ -59,8 +59,9 @@
             (cons stx (loop)))))
     (if (= (length forms) 1)
         (first forms)
-        ;; Wrap multiple forms in begin
-        (datum->syntax #f (cons 'begin forms)))))
+        ;; Create a begin form with proper lexical context
+        (let ([begin-stx (datum->syntax #f 'begin (vector path 1 0 1 1))])
+          (datum->syntax #f (cons begin-stx forms))))))
 
 (define (regexp-replace-first pattern text replacement)
   (define positions (regexp-match-positions pattern text))
@@ -74,7 +75,8 @@
 
 (define (expand-safe path stx)
   (with-handlers ([exn? (lambda (e) (list (diagnostic path 1 1 'error 'expand-error (exn-message e))))])
-    (expand stx)))
+    (parameterize ([current-namespace (make-base-namespace)])
+      (expand stx))))
 
 (define (merge-configs default-config user-config)
   (for/fold ([result default-config]) ([(k v) (in-hash user-config)])
