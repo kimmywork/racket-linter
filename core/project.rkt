@@ -152,25 +152,35 @@
   ;; 1. Same directory (relative path)
   ;; 2. Parent directory (for nested modules)
   ;; 3. Project root (for absolute paths)
+  ;; 4. Collection paths (e.g., "racket/list")
   (define dir (path-only (string->path from-path)))
-  (define candidates
-    (list 
-      ;; Same directory
-      (build-path dir (string->path (string-append require-str ".rkt")))
-      (build-path dir (string->path require-str))
-      ;; Parent directory (for nested modules like "../core/rule.rkt")
-      (build-path (simplify-path (build-path dir "..")) 
-                  (string->path (string-append require-str ".rkt")))
-      (build-path (simplify-path (build-path dir ".."))
-                  (string->path require-str))
-      ;; Two levels up
-      (build-path (simplify-path (build-path dir ".." ".."))
-                  (string->path (string-append require-str ".rkt")))
-      (build-path (simplify-path (build-path dir ".." ".."))
-                  (string->path require-str))))
-  (for/first ([c (in-list candidates)]
-               #:when (file-exists? c))
-    (path->string c)))
+  
+  ;; Skip collection-based paths (e.g., "racket/list", "racket/base")
+  (if (regexp-match? #px"^[a-zA-Z]" require-str)
+      #f
+      (let ([candidates
+             (list 
+               ;; Same directory
+               (build-path dir (string->path (string-append require-str ".rkt")))
+               (build-path dir (string->path require-str))
+               ;; Parent directory (for nested modules like "../core/rule.rkt")
+               (build-path (simplify-path (build-path dir "..")) 
+                           (string->path (string-append require-str ".rkt")))
+               (build-path (simplify-path (build-path dir ".."))
+                           (string->path require-str))
+               ;; Two levels up
+               (build-path (simplify-path (build-path dir ".." ".."))
+                           (string->path (string-append require-str ".rkt")))
+               (build-path (simplify-path (build-path dir ".." ".."))
+                           (string->path require-str))
+               ;; Three levels up (for deeply nested modules)
+               (build-path (simplify-path (build-path dir ".." ".." ".."))
+                           (string->path (string-append require-str ".rkt")))
+               (build-path (simplify-path (build-path dir ".." ".." ".."))
+                           (string->path require-str)))])
+        (for/first ([c (in-list candidates)]
+                     #:when (file-exists? c))
+          (path->string c)))))
 
 ;; Find exports that are not used anywhere in the project
 (define (find-unused-exports graph)
