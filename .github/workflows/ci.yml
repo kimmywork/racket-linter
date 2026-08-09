@@ -22,8 +22,8 @@ jobs:
           distribution: full
           version: ${{ matrix.racket-version }}
 
-      - name: Install dependencies
-        run: raco setup --check-pkg-deps racket-linter
+      - name: Install package
+        run: raco pkg install --auto --link .
 
       - name: Run tests
         run: raco test .
@@ -52,7 +52,7 @@ jobs:
           version: '9.2'
 
       - name: Install fmt
-        run: raco pkg install fmt
+        run: raco pkg install --auto fmt
 
       - name: Check formatting
         run: |
