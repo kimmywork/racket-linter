@@ -64,6 +64,7 @@ Rules not mentioned in the config use their built-in defaults. User config alway
 | `style/file-length` | text | File > 1000 lines |
 | `style/naming-convention` | text | Detects underscores and camelCase (should use hyphens) |
 | `style/require-sort` | text | Require arguments not sorted alphabetically |
+| `style/provide-sort` | text | Provide arguments not sorted alphabetically |
 
 ### Definition Rules (disabled by default)
 
