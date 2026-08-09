@@ -16,7 +16,9 @@
     [analyze-project (-> (listof path-string?) (listof diagnostic?))])
   build-dependency-graph
   find-circular-dependencies
-  find-unused-exports)
+  find-unused-exports
+  parse-module-info
+  (struct-out module-info))
 
 ;; Module info: path, provides, requires
 (struct module-info (path provides requires) #:transparent)
