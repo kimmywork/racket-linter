@@ -24,7 +24,8 @@ jobs:
           version: ${{ matrix.racket-version }}
 
       - name: Install package
-        run: raco pkg install --auto .
+        run: raco pkg install --auto
+        working-directory: ${{ github.workspace }}
 
       - name: Run tests
         run: raco test .
@@ -53,7 +54,8 @@ jobs:
           version: '9.2'
 
       - name: Install package
-        run: raco pkg install --auto .
+        run: raco pkg install --auto
+        working-directory: ${{ github.workspace }}
 
       - name: Install fmt
         run: raco pkg install --auto fmt
@@ -88,7 +90,8 @@ jobs:
           version: '9.2'
 
       - name: Install package
-        run: raco pkg install --auto .
+        run: raco pkg install --auto
+        working-directory: ${{ github.workspace }}
 
       - name: Build documentation
         run: raco setup --doc-index racket-linter
