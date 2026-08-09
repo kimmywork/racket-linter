@@ -4,6 +4,7 @@
          racket/string
          "helpers.rkt"
          "../core/diagnostic.rkt"
+         "../core/rule.rkt"
          "../rules/style/line-length.rkt"
          "../rules/style/trailing-whitespace.rkt"
          "../rules/style/newline-at-eof.rkt"
@@ -33,7 +34,17 @@
   (check-equal? (length (run-rule-on style/line-length (string-append (make-string 102 #\a) "\n"))) 0)
   (check-equal? (length (run-rule-on style/line-length (string-append (make-string 103 #\a) "\n"))) 1))
 
-;; trailing-whitespace
+
+(test-case "line-length: respects configured max-length"
+  (define temp-file (make-temp-rkt (string-append (make-string 120 #\a) "\n")))
+  (define diags
+    ((rule-check style/line-length)
+     #f
+     (path->string temp-file)
+     (hash 'max-length 120)))
+  (delete-file temp-file)
+  (check-equal? (length diags) 0))
+
 (test-case "trailing-whitespace: detects trailing spaces"
   (check-equal? (length (run-rule-on style/trailing-whitespace "line with trailing   \n")) 1))
 

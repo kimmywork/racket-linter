@@ -11,11 +11,11 @@
 (define-rule style/line-length
   #:id 'style/line-length
   #:severity 'warning
-  #:config-keys (hash)
+  #:config-keys (hash 'max-length 102)
   #:layer 'text
   (lambda (stx path config)
     (define lines (regexp-split #px"\n" (port->string (open-input-file path))))
-    (define max-length 102)
+    (define max-length (hash-ref config 'max-length 102))
     (for/fold ([acc '()]) ([line lines] [ln (in-naturals 1)])
       (if (> (string-length line) max-length)
           (append acc (list (diagnostic path ln 1 'warning 'style/line-length

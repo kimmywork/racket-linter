@@ -1,5 +1,7 @@
 #lang racket/base
-(require racket/string racket/path racket/list racket/contract/base racket/function racket/dict racket/port racket/system
+(require json
+         raco/command-name
+         racket/string racket/path racket/list racket/contract/base racket/function racket/dict racket/port racket/system
          "../core/diagnostic.rkt" "../core/rule.rkt" "../core/engine.rkt" "../core/project.rkt"
          "../rules/style/line-length.rkt" "../rules/style/trailing-whitespace.rkt"
          "../rules/style/newline-at-eof.rkt" "../rules/style/sexpr-depth.rkt"
@@ -15,8 +17,7 @@
          "../rules/check-syntax/unused.rkt"
          (for-syntax racket/base))
 (provide run)
-(module+ main (run (vector->list (current-command-line-arguments))))
-(define (usage)
+(define (usage [status 1])
   (displayln "Usage: raco lint [options] <directory>")
   (displayln "")
   (displayln "Options:")
@@ -27,7 +28,7 @@
   (displayln "  --exclude <dir>    Exclude directory from analysis (can be repeated)")
   (displayln "  --parallel         Enable parallel file processing")
   (displayln "  --output <format>  Output format: text, json, sarif, junit (default: text)")
-  (exit 1))
+  (exit status))
 (define (find-rkt-files dir)
   (for/list ([f (in-directory dir)]
              #:when (and (file-exists? f)
@@ -198,6 +199,7 @@
         [(string=? arg "--fix") (set! fix? #t) (loop (cdr remaining))]
         [(string=? arg "--format") (set! format? #t) (loop (cdr remaining))]
         [(string=? arg "--no-config") (set! no-config? #t) (loop (cdr remaining))]
+        [(string=? arg "--help") (usage 0)]
         [(string=? arg "--parallel") (set! parallel? #t) (loop (cdr remaining))]
         [(string=? arg "--output")
          (when (null? (cdr remaining))
@@ -217,9 +219,27 @@
            (usage))
          (set! exclude-dirs (cons (cadr remaining) exclude-dirs))
          (loop (cddr remaining))]
-        [(not (string-prefix? arg "--")) (set! dir arg) (loop (cdr remaining))]
+        [(not (string-prefix? arg "--"))
+         (if dir
+             (begin
+               (eprintf "Error: multiple directories are not supported: ~a\n" arg)
+               (usage))
+             (begin
+               (set! dir arg)
+               (loop (cdr remaining))))]
         [else (eprintf "Unknown option: ~a\n" arg) (usage)])))
-  (values fix? format? no-config? config-file exclude-dirs parallel? output-format dir))
+    (unless (member output-format '("text" "json" "sarif" "junit"))
+      (eprintf "Error: unsupported output format: ~a\n" output-format)
+      (usage))
+    (values fix? format? no-config? config-file exclude-dirs parallel? output-format dir))
+
+(define (load-user-config path)
+  (with-handlers ([exn? (lambda (_) (hash))])
+    (define text (call-with-input-file path port->string))
+    (define body
+      (regexp-replace #px"^#lang[^\n]*(\n|$)" text ""))
+    (parameterize ([current-namespace (make-base-namespace)])
+      (eval (read (open-input-string body))))))
 
 (define (run args)
   (define-values (fix? format? no-config? config-file exclude-dirs parallel? output-format dir) (parse-args args))
@@ -250,9 +270,7 @@
         (build-path dir ".racket-linter.rkt")))
   (define user-config
     (if (and (not no-config?) (file-exists? user-config-file))
-        (with-handlers ([exn? (lambda (e) (hash))])
-          (parameterize ([current-namespace (make-base-namespace)])
-            (eval (call-with-input-file user-config-file read))))
+        (load-user-config user-config-file)
         (hash)))
   (define merged-config user-config)
   ;; Format files if requested
@@ -260,38 +278,33 @@
     (displayln "Formatting files...")
     (for ([f (in-list files)])
       (format-file f)))
-  ;; Run analysis (parallel or sequential)
+  (define (run-one file)
+    (with-handlers ([exn? (lambda (_) '())])
+      (run-file all-rules merged-config file)))
+  (define (run-files-parallel)
+    (define channels (for/list ([file (in-list files)]) (make-channel)))
+    (for ([file (in-list files)] [channel (in-list channels)])
+      (thread
+       (lambda ()
+         (channel-put channel (run-one file)))))
+    (apply append
+           (for/list ([channel (in-list channels)])
+             (channel-get channel))))
+  ;; Run analysis concurrently when requested, while collecting diagnostics in
+  ;; the same file order as sequential execution.
   (define diagnostics
     (if parallel?
-        ;; Parallel processing using places
-        (let ([num-files (length files)])
-          (if (<= num-files 1)
-              ;; Sequential for single file
-              (apply append (map (lambda (f) 
-                                   (with-handlers ([exn? (lambda (e) (list))])
-                                     (run-file all-rules merged-config f)))
-                                 files))
-              ;; Parallel for multiple files
-              (let ([chunk-size (max 1 (quotient num-files 4))])
-                (apply append
-                  (map (lambda (chunk)
-                         (apply append
-                           (map (lambda (f) 
-                                  (with-handlers ([exn? (lambda (e) (list))])
-                                    (run-file all-rules merged-config f)))
-                                chunk)))
-                       (let loop ([remaining files] [chunks '()])
-                         (if (null? remaining)
-                             (reverse chunks)
-                             (let-values ([(chunk rest) (split-at remaining (min chunk-size (length remaining)))])
-                               (loop rest (cons chunk chunks))))))))))
-        ;; Sequential processing
-        (apply append (map (lambda (f) 
-                             (with-handlers ([exn? (lambda (e) (list))])
-                               (run-file all-rules merged-config f)))
-                           files))))
-  ;; Project-level analysis
-  (define project-diagnostics (analyze-project files))
+        (run-files-parallel)
+        (apply append (map run-one files))))
+  ;; Project-level analysis respects the same rule configuration as file rules.
+  (define project-diagnostics
+    (filter
+     (lambda (diagnostic)
+       (hash-ref
+        (hash-ref merged-config (diagnostic-rule-id diagnostic) (hash))
+        'enabled
+        #t))
+     (analyze-project files)))
   (define all-diagnostics (append diagnostics project-diagnostics))
   (when fix?
     ;; Group diagnostics by file
@@ -313,36 +326,72 @@
   (exit (if (null? all-diagnostics) 0 1)))
 
 ;; JSON output format
+(define (diagnostic->jsexpr d)
+  (hash 'path (diagnostic-path d)
+        'line (diagnostic-line d)
+        'col (diagnostic-col d)
+        'severity (symbol->string (diagnostic-severity d))
+        'rule-id (symbol->string (diagnostic-rule-id d))
+        'message (diagnostic-message d)))
+
 (define (format-json-output diagnostics)
-  (define results
-    (for/list ([d (in-list diagnostics)])
-      (format "{\"path\":\"~a\",\"line\":~a,\"col\":~a,\"severity\":\"~a\",\"rule-id\":\"~a\",\"message\":\"~a\"}"
-              (diagnostic-path d) (diagnostic-line d) (diagnostic-col d)
-              (diagnostic-severity d) (diagnostic-rule-id d)
-              (regexp-replace* "\"" (diagnostic-message d) "\\\""))))
-  (format "{\"diagnostics\":[~a]}" (string-join results ",")))
+  (jsexpr->string
+   (hash 'diagnostics
+         (map diagnostic->jsexpr diagnostics))))
 
 ;; SARIF output format (simplified)
 (define (format-sarif-output diagnostics)
-  (define results
-    (for/list ([d (in-list diagnostics)])
-      (hash 'ruleId (symbol->string (diagnostic-rule-id d))
-            'level (symbol->string (diagnostic-severity d))
-            'message (hash 'text (diagnostic-message d))
-            'locations (list (hash 'physicalLocation (hash 'artifactLocation (hash 'uri (diagnostic-path d))
-                                                          'region (hash 'startLine (diagnostic-line d)
-                                                                       'startColumn (diagnostic-col d))))))))
-  (format "{\"version\":\"2.1.0\",\"runs\":[{\"tool\":{\"driver\":{\"name\":\"racket-linter\",\"version\":\"0.2.0\"}},\"results\":~a}]}" results))
+  (jsexpr->string
+   (hash 'version "2.1.0"
+         'runs
+         (list
+          (hash 'tool
+                (hash 'driver
+                      (hash 'name "racket-linter"
+                            'version "0.2.0"))
+                'results
+                (map
+                 (lambda (d)
+                   (hash 'ruleId (symbol->string (diagnostic-rule-id d))
+                         'level (symbol->string (diagnostic-severity d))
+                         'message (hash 'text (diagnostic-message d))
+                         'locations
+                         (list
+                          (hash 'physicalLocation
+                                (hash 'artifactLocation
+                                      (hash 'uri (diagnostic-path d))
+                                      'region
+                                      (hash 'startLine (diagnostic-line d)
+                                            'startColumn (add1 (diagnostic-col d))))))))
+                 diagnostics))))))
 
 ;; JUnit XML output format (simplified)
+(define (xml-escape value)
+  (regexp-replace* #rx"[&<>\"']" value
+                   (lambda (match)
+                     (hash-ref
+                      (hash "&" "&amp;" "<" "&lt;" ">" "&gt;"
+                            "\"" "&quot;" "'" "&apos;")
+                      match))))
+
 (define (format-junit-output diagnostics)
   (define num-failures (length diagnostics))
   (define results
     (for/list ([d (in-list diagnostics)])
+      (define path (xml-escape (diagnostic-path d)))
+      (define rule-id (xml-escape (symbol->string (diagnostic-rule-id d))))
+      (define message (xml-escape (diagnostic-message d)))
       (format "<testcase name=\"~a:~a\" classname=\"~a\"><failure message=\"~a\">~a</failure></testcase>"
-              (diagnostic-path d) (diagnostic-line d)
-              (diagnostic-rule-id d)
-              (diagnostic-message d)
-              (diagnostic-message d))))
+              path (diagnostic-line d) rule-id message message)))
   (format "<?xml version=\"1.0\" encoding=\"UTF-8\"?><testsuite tests=\"~a\" failures=\"~a\">~a</testsuite>"
           num-failures num-failures (apply string-append results)))
+
+
+(define (invoke-command)
+  (run (vector->list (current-command-line-arguments))))
+
+;; `raco` loads command modules with dynamic-require; module+ main is only
+;; used for direct `racket cli/lint.rkt ...` execution.
+(module+ main (invoke-command))
+(when (current-command-name)
+  (invoke-command))
