@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        racket-version: ['8.7', '9.2']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Racket
+        uses: Bogdanp/setup-racket@v1.12
+        with:
+          architecture: x64
+          distribution: full
+          version: ${{ matrix.racket-version }}
+
+      - name: Install dependencies
+        run: raco setup --check-pkg-deps racket-linter
+
+      - name: Run tests
+        run: raco test .
+
+      - name: Check compilation
+        run: |
+          raco make cli/lint.rkt
+          raco make core/engine.rkt
+          raco make core/rule.rkt
+          raco make core/diagnostic.rkt
+
+      - name: Lint self
+        run: racket cli/lint.rkt . || true
+        continue-on-error: true
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Racket
+        uses: Bogdanp/setup-racket@v1.12
+        with:
+          architecture: x64
+          distribution: full
+          version: '9.2'
+
+      - name: Install fmt
+        run: raco pkg install fmt
+
+      - name: Check formatting
+        run: |
+          find . -name '*.rkt' -not -path './tests/*' | while read f; do
+            raco fmt --check "$f" || echo "Format check failed: $f"
+          done

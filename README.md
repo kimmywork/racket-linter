@@ -1,11 +1,17 @@
 # Racket Linter
 
-A configurable, extensible Racket linter that checks style, definitions, reachability, and export consistency across all `*.rkt` files in a project.
+A configurable, extensible Racket code linter that checks style, definitions, reachability, and export consistency across all `*.rkt` files in a project.
 
 ## Installation
 
 ```bash
 raco pkg install /path/to/racket-linter
+```
+
+Or link for development:
+
+```bash
+raco pkg install --link /path/to/racket-linter
 ```
 
 ## Usage
@@ -14,27 +20,116 @@ raco pkg install /path/to/racket-linter
 raco lint <directory>
 ```
 
+The linter recursively scans the directory for `*.rkt` files and runs all enabled rules.
+
 ## Configuration
 
-Create a `.racket-linter.rkt` file in your project root:
+Create a `.racket-linter.rkt` file in your project root. The file must return a hash mapping rule IDs to their configuration:
 
 ```racket
-#lang racket
-(linter-config
-  #:rules
-  (hash
-    'style/line-length (hash #:enabled #t #:max-length 102)
-    'style/trailing-whitespace (hash #:enabled #t)
-    'definition/unused (hash #:enabled #t)))
+#lang racket/base
+(hash
+  'style/line-length (hash 'enabled #t 'max-length 102)
+  'definition/unused (hash 'enabled #t)
+  'reachability/unused-require (hash 'enabled #t))
 ```
 
-## Rules
+Rules not mentioned in the config use their built-in defaults. User config always overrides rule defaults.
 
-See [docs/guides/rules.md](docs/guides/rules.md) for the full list of built-in rules.
+### Disabling a rule
+
+```racket
+(hash 'style/line-length (hash 'enabled #f))
+```
+
+## Built-in Rules
+
+### Style Rules (enabled by default)
+
+| Rule ID | Layer | Description |
+|---------|-------|-------------|
+| `style/line-length` | text | Lines exceeding max length (default: 102) |
+| `style/trailing-whitespace` | text | Lines with trailing whitespace |
+| `style/newline-at-eof` | text | File must end with newline |
+| `style/sexpr-depth` | syntax | S-expression nesting depth > 10 |
+| `style/definition-length` | text | Single definition > 66 lines |
+| `style/file-length` | text | File > 1000 lines |
+
+### Definition Rules (disabled by default)
+
+| Rule ID | Layer | Description |
+|---------|-------|-------------|
+| `definition/unused` | text | Definitions that appear unused (regex-based, high false positive) |
+
+### Reachability Rules
+
+| Rule ID | Layer | Default | Description |
+|---------|-------|---------|-------------|
+| `reachability/undefined` | syntax | enabled | References to undefined identifiers |
+| `reachability/unused-require` | syntax | disabled | Required bindings not used in file |
+
+### Export Rules (disabled by default)
+
+| Rule ID | Layer | Description |
+|---------|-------|-------------|
+| `export/unused` | syntax | Provided identifiers not used within module |
+
+### Module Rules (disabled by default)
+
+| Rule ID | Layer | Description |
+|---------|-------|-------------|
+| `module/require-provide` | syntax | Tracks module provide declarations |
+
+## Layer System
+
+Rules declare a **layer** that determines when they run:
+
+- **`text`** — runs on raw file text (the `stx` argument is `#f`). Always executed, even for non-standard `#lang` files.
+- **`syntax`** — runs on the parsed syntax object. Only executed for files with safe `#lang` declarations.
+- **`both`** — runs in both the text phase and the syntax phase.
+
+## Auto-Fix
+
+Some rules support automatic fixing:
+
+```bash
+raco lint --fix <directory>
+```
+
+Rules with auto-fix support:
+
+- `style/trailing-whitespace` — removes trailing whitespace
+- `style/newline-at-eof` — adds missing newline at end of file
+- `style/line-length` — (limited) wraps long lines
+
+## Safe Language Whitelist
+
+Files with these `#lang` declarations are parsed with `read-syntax` for syntax-level analysis:
+
+`racket`, `racket/base`, `racket/contract`, `racket/contract/base`, `racket/class`, `racket/date`, `racket/dict`, `racket/function`, `racket/list`, `racket/match`, `racket/math`, `racket/port`, `racket/pretty`, `racket/require`, `racket/set`, `racket/string`, `racket/vector`, `racket/format`, `racket/gui`, `racket/gui/base`, `racket/future`, `racket/flonum`, `racket/fixnum`, `racket/unsafe/ops`
+
+Files with other `#lang` declarations are downgraded to text-only analysis (syntax-layer rules are skipped).
 
 ## Custom Rules
 
-Create a `.racket-linter-rules/` directory in your project and add `.rkt` files that export rules using `define-rule`.
+Create a `.racket-linter-rules/` directory in your project and add `.rkt` files that export a `custom-rules` list:
+
+```racket
+#lang racket/base
+(require racket-linter/core/rule racket-linter/core/diagnostic)
+
+(define-rule my/custom-rule
+  #:id 'my/custom-rule
+  #:severity 'warning
+  #:config-keys (hash 'enabled #t)
+  #:layer 'text
+  (lambda (stx path config)
+    ;; Return a list of diagnostics
+    '()))
+
+(provide custom-rules)
+(define custom-rules (list my/custom-rule))
+```
 
 ## License
 
