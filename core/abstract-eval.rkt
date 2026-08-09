@@ -55,28 +55,25 @@
 (define (make-lst) (abstract-lst))
 (define (make-pair car-type cdr-type) (abstract-pair car-type cdr-type))
 
-;; Environment: maps identifiers to abstract values
-(define (make-env) (make-immutable-bound-id-table))
+;; Environment: maps identifier names to abstract values
+(define (make-env) (hash))
 (define (env-ref env id)
-  (bound-id-table-ref env id (lambda () (⊥ (format "unbound: ~a" (syntax-e id))))))
+  (hash-ref env (syntax-e id) (lambda () (⊥ (format "unbound: ~a" (syntax-e id))))))
 (define (env-set env id val)
-  (bound-id-table-set env id val))
+  (hash-set env (syntax-e id) val))
 
 ;; Abstract evaluator
 (define (aeval stx env)
   (syntax-parse stx
     #:literal-sets (kernel-literals)
     
-    ;; Locally bound identifier
-    [(~and id:id (~fail #:unless (eq? (identifier-binding #'id) 'lexical)))
-     (env-ref env #'id)]
-    
-    ;; Top-level, module-level, or unbound identifier
-    [id:id T]
+    ;; Identifier: look up in environment first, return T if not found
+    [id:id
+     (hash-ref env (syntax-e #'id) (lambda () T))]
     
     ;; Top-level reference (#%top . id) - look up in environment
     [(#%top . id)
-     (env-ref env #'id)]
+     (hash-ref env (syntax-e #'id) (lambda () T))]
     
     ;; Lambda - store parameter type information
     [(#%plain-lambda formals body ...)
@@ -297,6 +294,12 @@
        (for ([arg (syntax->list #'(arg-exprs ...))])
          (walk arg env))
        env]
+
+      ;; Lambda: walk the body
+      [(#%plain-lambda formals body ...)
+       (for ([b (syntax->list #'(body ...))])
+         (walk b env))
+       env]
       
       ;; Letrec-values: check for use before initialization
       [(letrec-values ([(id ...) val-expr] ...) body ...)
@@ -335,11 +338,13 @@
              (let ([result (walk (car bodies) e)])
                (loop (cdr bodies) (if (void? result) e result)))))]
       
-      ;; Module: walk the body
+      ;; Module: walk the body, tracking env through define-values
       [(module name lang body ...)
-       (for ([b (syntax->list #'(body ...))])
-         (walk b env))
-       env]
+       (let loop ([bodies (syntax->list #'(body ...))] [e env])
+         (if (null? bodies)
+             e
+             (let ([result (walk (car bodies) e)])
+               (loop (cdr bodies) (if (void? result) e result)))))]
       
       ;; If: check if test is always false
       [(if test-expr then-expr else-expr)
