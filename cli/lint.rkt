@@ -26,6 +26,7 @@
   (displayln "  --config <file>    Specify custom config file path")
   (displayln "  --exclude <dir>    Exclude directory from analysis (can be repeated)")
   (displayln "  --parallel         Enable parallel file processing")
+  (displayln "  --output <format>  Output format: text, json, sarif, junit (default: text)")
   (exit 1))
 (define (find-rkt-files dir)
   (for/list ([f (in-directory dir)]
@@ -147,6 +148,7 @@
   (define config-file #f)
   (define exclude-dirs '())
   (define parallel? #f)
+  (define output-format "text")
   (define dir #f)
   (let loop ([remaining args])
     (unless (null? remaining)
@@ -156,6 +158,12 @@
         [(string=? arg "--format") (set! format? #t) (loop (cdr remaining))]
         [(string=? arg "--no-config") (set! no-config? #t) (loop (cdr remaining))]
         [(string=? arg "--parallel") (set! parallel? #t) (loop (cdr remaining))]
+        [(string=? arg "--output")
+         (when (null? (cdr remaining))
+           (eprintf "Error: --output requires a format (text, json, sarif, junit)\n")
+           (usage))
+         (set! output-format (cadr remaining))
+         (loop (cddr remaining))]
         [(string=? arg "--config")
          (when (null? (cdr remaining))
            (eprintf "Error: --config requires a file path\n" )
@@ -170,10 +178,10 @@
          (loop (cddr remaining))]
         [(not (string-prefix? arg "--")) (set! dir arg) (loop (cdr remaining))]
         [else (eprintf "Unknown option: ~a\n" arg) (usage)])))
-  (values fix? format? no-config? config-file exclude-dirs parallel? dir))
+  (values fix? format? no-config? config-file exclude-dirs parallel? output-format dir))
 
 (define (run args)
-  (define-values (fix? format? no-config? config-file exclude-dirs parallel? dir) (parse-args args))
+  (define-values (fix? format? no-config? config-file exclude-dirs parallel? output-format dir) (parse-args args))
   (unless dir (usage))
   (unless (directory-exists? dir)
     (eprintf "Error: ~a is not a directory\n" dir)
@@ -251,5 +259,49 @@
       (hash-update! by-file (diagnostic-path d) (lambda (old) (cons d old)) '()))
     (for ([(path diags) (in-hash by-file)])
       (apply-fixes path diags)))
-  (print-diagnostics all-diagnostics)
+  ;; Output diagnostics in the specified format
+  (cond
+    [(string=? output-format "json")
+     (displayln (format-json-output all-diagnostics))]
+    [(string=? output-format "sarif")
+     (displayln (format-sarif-output all-diagnostics))]
+    [(string=? output-format "junit")
+     (displayln (format-junit-output all-diagnostics))]
+    [else
+     (print-diagnostics all-diagnostics)])
   (exit (if (null? all-diagnostics) 0 1)))
+
+;; JSON output format
+(define (format-json-output diagnostics)
+  (define results
+    (for/list ([d (in-list diagnostics)])
+      (format "{\"path\":\"~a\",\"line\":~a,\"col\":~a,\"severity\":\"~a\",\"rule-id\":\"~a\",\"message\":\"~a\"}"
+              (diagnostic-path d) (diagnostic-line d) (diagnostic-col d)
+              (diagnostic-severity d) (diagnostic-rule-id d)
+              (regexp-replace* "\"" (diagnostic-message d) "\\\""))))
+  (format "{\"diagnostics\":[~a]}" (string-join results ",")))
+
+;; SARIF output format (simplified)
+(define (format-sarif-output diagnostics)
+  (define results
+    (for/list ([d (in-list diagnostics)])
+      (hash 'ruleId (symbol->string (diagnostic-rule-id d))
+            'level (symbol->string (diagnostic-severity d))
+            'message (hash 'text (diagnostic-message d))
+            'locations (list (hash 'physicalLocation (hash 'artifactLocation (hash 'uri (diagnostic-path d))
+                                                          'region (hash 'startLine (diagnostic-line d)
+                                                                       'startColumn (diagnostic-col d))))))))
+  (format "{\"version\":\"2.1.0\",\"runs\":[{\"tool\":{\"driver\":{\"name\":\"racket-linter\",\"version\":\"0.2.0\"}},\"results\":~a}]}" results))
+
+;; JUnit XML output format (simplified)
+(define (format-junit-output diagnostics)
+  (define num-failures (length diagnostics))
+  (define results
+    (for/list ([d (in-list diagnostics)])
+      (format "<testcase name=\"~a:~a\" classname=\"~a\"><failure message=\"~a\">~a</failure></testcase>"
+              (diagnostic-path d) (diagnostic-line d)
+              (diagnostic-rule-id d)
+              (diagnostic-message d)
+              (diagnostic-message d))))
+  (format "<?xml version=\"1.0\" encoding=\"UTF-8\"?><testsuite tests=\"~a\" failures=\"~a\">~a</testsuite>"
+          num-failures num-failures (apply string-append results)))
