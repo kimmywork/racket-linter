@@ -5,7 +5,8 @@
          "../rules/style/newline-at-eof.rkt" "../rules/style/sexpr-depth.rkt"
          "../rules/style/definition-length.rkt" "../rules/style/file-length.rkt"
          "../rules/definition/unused.rkt" "../rules/reachability/undefined.rkt"
-         "../rules/reachability/unused-require.rkt" "../rules/export/unused.rkt"
+         "../rules/reachability/unused-require.rkt" "../rules/reachability/unused-require-expand.rkt"
+         "../rules/export/unused.rkt"
          "../rules/module/require-provide.rkt"
          (for-syntax racket/base))
 (provide run)
@@ -105,6 +106,7 @@
     (list style/line-length style/trailing-whitespace style/newline-at-eof
           style/sexpr-depth style/definition-length style/file-length
           definition/unused reachability/undefined reachability/unused-require
+          reachability/unused-require-expand
           export/unused module/require-provide))
   (define user-config-file (build-path dir ".racket-linter.rkt"))
   (define user-config

@@ -64,8 +64,10 @@
 ;; Layer system:
 ;; 'text   - runs on raw text (stx is #f), always executed
 ;; 'syntax - runs on parsed syntax (stx is syntax?), only for safe languages
+;; 'expand - runs on expanded syntax (stx is expanded syntax?), only for safe languages
 ;; 'both   - runs in BOTH text and syntax phases (stx is #f then syntax?)
 ;; Cross-module rules need a separate dispatch mechanism beyond run-file.
+;; Expansion uses `expand` API which can have side effects; only for safe #lang.
 
 (define (run-file rules config path)
   (define text (call-with-input-file path port->string))
@@ -88,7 +90,7 @@
         (if (list? stx-list)
             (let ([stx (first stx-list)])
               (if (syntax? stx)
-                  (append text-layer-results
+                  (let* ([syntax-results
                           (foldl
                             (lambda (rule acc)
                               (define merged-config (merge-configs (rule-config-keys rule) (hash-ref config (rule-id rule) (hash))))
@@ -97,6 +99,22 @@
                                   (append acc ((rule-check rule) stx path merged-config))
                                   acc))
                             '()
-                            rules))
+                            rules)]
+                         [expand-results
+                          (if (ormap (lambda (r) (eq? (rule-layer r) 'expand)) rules)
+                              (let ([expanded (expand-safe path stx)])
+                                (if (syntax? expanded)
+                                    (foldl
+                                      (lambda (rule acc)
+                                        (define merged-config (merge-configs (rule-config-keys rule) (hash-ref config (rule-id rule) (hash))))
+                                        (define enabled? (hash-ref merged-config 'enabled #t))
+                                        (if (and enabled? (eq? (rule-layer rule) 'expand))
+                                            (append acc ((rule-check rule) expanded path merged-config))
+                                            acc))
+                                      '()
+                                      rules)
+                                    '()))
+                              '())])
+                    (append text-layer-results syntax-results expand-results))
                   text-layer-results))
             text-layer-results))))
