@@ -62,6 +62,8 @@ Rules not mentioned in the config use their built-in defaults. User config alway
 | `style/sexpr-depth` | syntax | S-expression nesting depth > 10 |
 | `style/definition-length` | text | Single definition > 66 lines |
 | `style/file-length` | text | File > 1000 lines |
+| `style/naming-convention` | text | Detects underscores and camelCase (should use hyphens) |
+| `style/require-sort` | text | Require arguments not sorted alphabetically |
 
 ### Definition Rules (disabled by default)
 
@@ -75,6 +77,7 @@ Rules not mentioned in the config use their built-in defaults. User config alway
 |---------|-------|---------|-------------|
 | `reachability/undefined` | syntax | enabled | References to undefined identifiers |
 | `reachability/unused-require` | syntax | disabled | Required bindings not used in file |
+| `reachability/unused-require-expand` | expand | disabled | Unused requires detected via expansion |
 
 ### Export Rules (disabled by default)
 
@@ -88,12 +91,26 @@ Rules not mentioned in the config use their built-in defaults. User config alway
 |---------|-------|-------------|
 | `module/require-provide` | syntax | Tracks module provide declarations |
 
+### Abstract Interpretation Rules (disabled by default)
+
+| Rule ID | Layer | Description |
+|---------|-------|-------------|
+| `abstract/type-error` | expand | Detects type errors via abstract interpretation |
+
+### Project-Level Rules
+
+| Rule ID | Description |
+|---------|-------------|
+| `module/circular-dependency` | Detects circular require chains |
+| `export/unused-project` | Exports not used by any other module in project |
+
 ## Layer System
 
 Rules declare a **layer** that determines when they run:
 
 - **`text`** — runs on raw file text (the `stx` argument is `#f`). Always executed, even for non-standard `#lang` files.
 - **`syntax`** — runs on the parsed syntax object. Only executed for files with safe `#lang` declarations.
+- **`expand`** — runs on the expanded syntax object (after macro expansion). Only executed for files with safe `#lang` declarations. Enables deeper analysis like type checking.
 - **`both`** — runs in both the text phase and the syntax phase.
 
 ## Auto-Fix
