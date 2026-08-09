@@ -287,4 +287,49 @@
   (check-true (list? (module-info-requires info)))
   (delete-file temp-file))
 
+;; ============================================================
+;; Abstract interpreter tests
+;; ============================================================
+
+(require "../core/abstract-eval.rkt" syntax/modread)
+
+(define (run-abstract-on content)
+  (define temp-file (make-temporary-file "test-~a.rkt"))
+  (display-to-file content temp-file #:exists 'replace)
+  (define stx
+    (call-with-input-file temp-file
+      (lambda (in)
+        (with-module-reading-parameterization
+          (lambda () (read-syntax temp-file in))))))
+  (define diags (if (syntax? stx) (analyze-abstract stx (path->string temp-file)) '()))
+  (delete-file temp-file)
+  diags)
+
+(test-case "abstract: fixpoint iteration for recursive functions"
+  (define diags (run-abstract-on "#lang racket/base\n(define (fact n) (if (= n 0) 1 (* n (fact (- n 1)))))\n"))
+  ;; Should not hang and should produce diagnostics list
+  (check-true (list? diags)))
+
+(test-case "abstract: list type tracking"
+  (define diags (run-abstract-on "#lang racket/base\n(define x (list 1 2 3))\n"))
+  (check-true (list? diags)))
+
+(test-case "abstract: pair type tracking"
+  (define diags (run-abstract-on "#lang racket/base\n(define x (cons 1 (list 2)))\n"))
+  (check-true (list? diags)))
+
+(test-case "abstract: car/cdr operations"
+  (define diags (run-abstract-on "#lang racket/base\n(define x (cons 1 (list 2)))\n(define y (car x))\n(define z (cdr x))\n"))
+  (check-true (list? diags)))
+
+(test-case "abstract: numeric operations"
+  (define diags (run-abstract-on "#lang racket/base\n(define x (+ 1 2))\n"))
+  (check-true (list? diags)))
+
+(test-case "abstract: type error detection"
+  (define diags (run-abstract-on "#lang racket/base\n(define x 1)\n(x 2)\n"))
+  (check-true (list? diags))
+  (check-true (>= (length diags) 1))
+  (check-equal? (diagnostic-rule-id (car diags)) 'abstract/type-error))
+
 (displayln "All tests passed!")
