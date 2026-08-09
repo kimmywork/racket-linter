@@ -41,6 +41,27 @@
           text))
     (list (read-syntax path (open-input-string text-no-lang)))))
 
+;; Read all forms from a file for expansion
+(define (read-syntax-all path)
+  (with-handlers ([exn? (lambda (e) #f)])
+    (define text (call-with-input-file path port->string))
+    (define lang (detect-lang-from-text text))
+    (define text-no-lang
+      (if lang
+          (regexp-replace-first #px"^#lang\\s+\\S+\\s*" text "")
+          text))
+    (define in (open-input-string text-no-lang))
+    (define forms
+      (let loop ()
+        (define stx (read-syntax path in))
+        (if (eof-object? stx)
+            '()
+            (cons stx (loop)))))
+    (if (= (length forms) 1)
+        (first forms)
+        ;; Wrap multiple forms in begin
+        (datum->syntax #f (cons 'begin forms)))))
+
 (define (regexp-replace-first pattern text replacement)
   (define positions (regexp-match-positions pattern text))
   (if positions
@@ -102,7 +123,8 @@
                             rules)]
                          [expand-results
                           (if (ormap (lambda (r) (eq? (rule-layer r) 'expand)) rules)
-                              (let ([expanded (expand-safe path stx)])
+                              (let* ([all-stx (read-syntax-all path)]
+                                     [expanded (if (syntax? all-stx) (expand-safe path all-stx) #f)])
                                 (if (syntax? expanded)
                                     (foldl
                                       (lambda (rule acc)
