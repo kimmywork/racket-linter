@@ -1,5 +1,15 @@
 #lang racket/base
 
+;; Project-level analysis module for racket-linter
+;;
+;; This module provides cross-file analysis capabilities:
+;; 1. Building dependency graphs from require/provide forms
+;; 2. Detecting circular dependencies
+;; 3. Finding unused exports across the project
+;;
+;; The analysis is text-based (using regex) rather than syntax-based,
+;; which means it works on all files regardless of #lang declaration.
+
 (require
   racket/list
   racket/string
@@ -20,7 +30,12 @@
   parse-module-info
   (struct-out module-info))
 
-;; Module info: path, provides, requires
+;; Represents information about a single module.
+;; 
+;; Fields:
+;;   path - file path of the module
+;;   provides - list of provided names (strings)
+;;   requires - list of required module paths (strings)
 (struct module-info (path provides requires) #:transparent)
 
 ;; Parse a file to extract provide and require forms

@@ -1,5 +1,16 @@
 #lang racket/base
 
+;; Engine module for racket-linter
+;;
+;; The engine is responsible for:
+;; 1. Reading and parsing Racket source files
+;; 2. Detecting the #lang declaration
+;; 3. Running rules based on their layer (text, syntax, expand)
+;; 4. Collecting and returning diagnostics
+;;
+;; The engine handles the safe language whitelist - files with non-standard
+;; #lang declarations are downgraded to text-only analysis.
+
 (require
   racket/string
   racket/list
@@ -17,6 +28,9 @@
     [run-file (-> (listof rule?) hash? path-string? (listof diagnostic?))])
   merge-configs)
 
+;; Check if a language is in the safe whitelist.
+;; Only safe languages can be parsed with read-syntax and expanded.
+;; Non-safe languages are downgraded to text-only analysis.
 (define (safe-lang? lang-str)
   (member lang-str
           '("racket" "racket/base" "racket/contract" "racket/contract/base"
