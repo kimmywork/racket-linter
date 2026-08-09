@@ -71,6 +71,16 @@
           (string-append indent "(provide " (string-join sorted-args " ") ")"))
         line)))
 
+(define (fix-simplify-cond lines)
+  (for/list ([line (in-list lines)])
+    (define trimmed (string-trim line))
+    ;; Replace #t with else in cond forms (on same line or next line)
+    (if (or (regexp-match? #px"\\(cond\\s+\\[\\s*#t" trimmed)
+            (regexp-match? #px"^\\[\\s*#t" trimmed))
+        (let ([indent (make-string (string-length (car (regexp-match #px"^\\s*" line))) #\space)])
+          (string-append indent (regexp-replace* #px"#t" trimmed "else")))
+        line)))
+
 (define (apply-fixes path diagnostics)
   (define text (call-with-input-file path port->string))
   (define lines (string-split text "\n" #:trim? #f))
@@ -78,6 +88,7 @@
   (define has-no-eof-newline? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/newline-at-eof)) diagnostics))
   (define has-require-sort? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/require-sort)) diagnostics))
   (define has-provide-sort? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/provide-sort)) diagnostics))
+  (define has-simplify-cond? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/simplify-cond)) diagnostics))
   (define fixed-lines
     (let ([l lines])
       (when has-trailing?
@@ -88,6 +99,8 @@
         (set! l (fix-require-sort l)))
       (when has-provide-sort?
         (set! l (fix-provide-sort l)))
+      (when has-simplify-cond?
+        (set! l (fix-simplify-cond l)))
       l))
   (define fixed-text (string-join fixed-lines "\n"))
   (unless (string=? text fixed-text)

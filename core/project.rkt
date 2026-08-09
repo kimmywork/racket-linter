@@ -38,8 +38,8 @@
            [(and (not in-provide?) (regexp-match? #px"^\\(provide\\s+" trimmed))
             (if (regexp-match? #px"\\)\\s*$" trimmed)
                 ;; Single-line provide
-                (let ([args (regexp-replace #px"^\\(provide\\s+" trimmed "")]
-                      [args-clean (regexp-replace #px"\\)\\s*$" "")])
+                (let* ([args (regexp-replace #px"^\\(provide\\s+" trimmed "")]
+                       [args-clean (regexp-replace #px"\\)\\s*$" args "")])
                   (loop (cdr lines) (append acc (string-split args-clean)) #f ""))
                 ;; Multi-line provide
                 (loop (cdr lines) acc #t trimmed))]

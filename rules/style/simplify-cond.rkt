@@ -33,8 +33,9 @@
     (for ([line (in-list lines)] [ln (in-naturals 1)])
       (define trimmed (string-trim line))
       
-      ;; Check for cond with #t as test
-      (when (regexp-match? #px"\\(cond\\s+\\[\\s*#t" trimmed)
+      ;; Check for cond with #t as test (on same line or next line)
+      (when (or (regexp-match? #px"\\(cond\\s+\\[\\s*#t" trimmed)
+                (regexp-match? #px"^\\[\\s*#t" trimmed))
         (set! diagnostics
               (cons (diagnostic path ln 1 'info 'style/simplify-cond
                                 "Use 'else' instead of '#t' in cond")
