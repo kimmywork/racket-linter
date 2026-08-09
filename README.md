@@ -4,12 +4,9 @@
 runs text, syntax, expansion, and project rules through `raco lint` and emits
 human-readable or machine-readable diagnostics.
 
-The Scribble manual at `scribblings/racket-linter.scrbl` is the source of truth
-for the rule, CLI, configuration, output, and API contracts. Build it with:
-
-```sh
-raco setup --pkgs racket-linter
-```
+The canonical documentation is the Scribble manual at
+[`scribblings/racket-linter.scrbl`](scribblings/racket-linter.scrbl). The
+repository does not keep generated `doc/` output; `raco setup` recreates it.
 
 ## Development
 
@@ -22,8 +19,8 @@ raco setup --pkgs racket-linter
 raco lint .
 ```
 
-For a linked checkout, `raco lint` must be indexed after changing `info.rkt` or
-command registration:
+The current test suite has 286 passing tests. Re-run setup after changing
+`info.rkt` or the registered `raco lint` command:
 
 ```sh
 raco setup --pkgs racket-linter
@@ -40,9 +37,11 @@ raco lint --output junit <directory>
 raco lint --parallel <directory>
 ```
 
-The command returns status 0 when there are no diagnostics and status 1 when
-there are diagnostics or a linter rule fails. Invalid options return a
-non-zero status. JSON, SARIF, and JUnit output are structurally serialized.
+The command returns status 0 when no diagnostics are produced and status 1
+when diagnostics or a linter rule failure is present. Invalid options return a
+non-zero status. Only one project directory argument is accepted. JSON, SARIF,
+and JUnit output are structurally serialized and suitable for CI consumers.
+`--parallel` uses concurrent file analysis while preserving file-order output.
 
 ## Configuration
 
@@ -58,16 +57,29 @@ that evaluates to a hash:
 ```
 
 A hash-only configuration is also accepted for compatibility. Configuration is
-trusted code and must not be loaded from an untrusted project without review
-or sandboxing.
+trusted code and must not be loaded from an untrusted project without review or
+sandboxing.
 
-## Scope
+Reliable, low-cost file rules are enabled by default. The undefined-identifier
+scanner, sexpr-depth heuristic, definition/unused heuristic, unused-binding
+rules, export checks, and abstract analysis are opt-in where their current
+binding or semantic precision is limited. Circular-dependency analysis remains
+enabled by default. Project-level unused-export analysis is disabled by
+default because a library's external consumers are outside the scanned tree.
 
-The linter is intentionally conservative. The undefined-identifier rule is a
-local syntax scanner, project export analysis cannot see external library
-consumers, abstract evaluation is not a type system, and the unreachable-code
-rule is a text heuristic. These limits and the complete rule inventory are
-documented in Scribble.
+## Analysis Boundaries
+
+- syntax analysis now reads all top-level forms in a file;
+- expansion is restricted to a safe-language whitelist;
+- abstract evaluation is a conservative value-flow analysis, not a type system;
+- `abstract/unreachable-code` is a text heuristic, not a proof;
+- require/provide analysis is local or based on a simplified project graph;
+- rule exceptions become `linter/internal-error` diagnostics instead of being
+  silently treated as a clean result;
+- auto-fixes are text/syntax transformations and require review.
+
+Use the Scribble manual for the complete rule inventory, configuration keys,
+custom rule API, output schemas, and known limitations.
 
 ## License
 
