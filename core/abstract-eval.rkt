@@ -120,10 +120,10 @@
            (begin (aeval (car bodies) env*)
                   (body-loop (cdr bodies)))))]
     
-    ;; Letrec-values
+    ;; Letrec-values with fixpoint iteration for recursive functions
     [(letrec-values ([(id ...) val-expr] ...) body ...)
      ;; First, bind all identifiers to T (uninitialized)
-     (define env*
+     (define initial-env
        (let loop ([ids-list (syntax->list #'((id ...) ...))]
                   [e env])
          (if (null? ids-list)
@@ -134,11 +134,40 @@
                               e3
                               (inner (cdr id-list) (env-set e3 (car id-list) T))))])
                (loop (cdr ids-list) e2)))))
-     ;; Then evaluate the bodies
+     
+     ;; Fixpoint iteration for recursive definitions
+     (define max-iterations 10)
+     (define-values (final-env _)
+       (let iteration ([current-env initial-env]
+                       [prev-env #f]
+                       [iter 0])
+         (if (and prev-env (equal? current-env prev-env))
+             ;; Fixpoint reached
+             (values current-env iter)
+             (if (>= iter max-iterations)
+                 ;; Max iterations reached
+                 (values current-env iter)
+                 ;; Evaluate all value expressions with current environment
+                 (let ([new-env
+                        (let eval-loop ([ids-list (syntax->list #'((id ...) ...))]
+                                       [vals-list (syntax->list #'(val-expr ...))]
+                                       [e current-env])
+                          (if (null? ids-list)
+                              e
+                              (let* ([ids (car ids-list)]
+                                     [val (aeval (car vals-list) current-env)]
+                                     [e2 (let inner ([id-list (syntax->list ids)] [e3 e])
+                                           (if (null? id-list)
+                                               e3
+                                               (inner (cdr id-list) (env-set e3 (car id-list) val))))])
+                                (eval-loop (cdr ids-list) (cdr vals-list) e2))))])
+                   (iteration new-env current-env (+ iter 1)))))))
+     
+     ;; Then evaluate the bodies with the final environment
      (let body-loop ([bodies (syntax->list #'(body ...))])
        (if (null? (cdr bodies))
-           (aeval (car bodies) env*)
-           (begin (aeval (car bodies) env*)
+           (aeval (car bodies) final-env)
+           (begin (aeval (car bodies) final-env)
                   (body-loop (cdr bodies)))))]
     
     ;; Quote
