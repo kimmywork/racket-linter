@@ -272,14 +272,28 @@
     (if (and (not no-config?) (file-exists? user-config-file))
         (load-user-config user-config-file)
         (hash)))
-  (define merged-config user-config)
+  (define default-project-config
+    (hash 'module/circular-dependency (hash 'enabled #t)
+          'export/unused-project (hash 'enabled #f)))
+  (define merged-config
+    (merge-configs default-project-config user-config))
   ;; Format files if requested
   (when format?
     (displayln "Formatting files...")
     (for ([f (in-list files)])
       (format-file f)))
   (define (run-one file)
-    (with-handlers ([exn? (lambda (_) '())])
+    (with-handlers ([exn?
+                     (lambda (failure)
+                       (list
+                        (diagnostic
+                         file
+                         1
+                         1
+                         'error
+                         'linter/internal-error
+                         (format "Linter rule execution failed: ~a"
+                                 (exn-message failure)))))])
       (run-file all-rules merged-config file)))
   (define (run-files-parallel)
     (define channels (for/list ([file (in-list files)]) (make-channel)))

@@ -21,7 +21,7 @@
 
 (define-rule abstract/type-error
   #:id 'abstract/type-error
-  #:severity 'warning
+  #:severity 'error
   #:config-keys (hash 'enabled #f)
   #:layer 'expand
   (lambda (stx path config)

@@ -1,6 +1,7 @@
 #lang racket/base
 
 (require rackunit
+         racket/string
          racket/port
          racket/file
          racket/path
@@ -17,14 +18,18 @@
         (with-module-reading-parameterization
           (lambda () (read-syntax f in))))))
   (define expanded
-    (if (syntax? stx)
-        (with-handlers ([exn? (lambda (e) #f)])
-          (parameterize ([current-namespace (make-base-namespace)])
-            (expand stx)))
-        #f))
-  (define diags (if (syntax? expanded) (analyze-abstract expanded (path->string f)) '()))
+    (parameterize ([current-namespace (make-base-namespace)])
+      (expand stx)))
+  (unless (syntax? expanded)
+    (error 'run-abstract "expansion did not produce syntax"))
+  (define diags (analyze-abstract expanded (path->string f)))
   (delete-file f)
   diags)
+
+(define (type-errors diagnostics)
+  (filter (lambda (d)
+            (eq? (diagnostic-rule-id d) 'abstract/type-error))
+          diagnostics))
 
 ;; ============================================================
 ;; Type error detection
@@ -170,3 +175,23 @@
 
 (test-case "abstract: multiple bodies"
   (check-true (list? (run-abstract "#lang racket/base\n(define x 1)\n(displayln x)\n"))))
+
+(test-case "abstract: reports known procedure arity error"
+  (define diags
+    (run-abstract
+     "#lang racket/base\n(define (f x y) (+ x y))\n(f 1)\n"))
+  (check-equal? (length (type-errors diags)) 1)
+  (check-true (string-contains?
+               (diagnostic-message (car (type-errors diags)))
+               "expects 2 arguments")))
+
+(test-case "abstract: valid list and arithmetic flow has no type error"
+  (define diags
+    (run-abstract
+     "#lang racket/base\n(define xs (list 1 2))\n(+ (car xs) 3)\n"))
+  (check-equal? (length (type-errors diags)) 0))
+
+(test-case "abstract: expansion failure is not a clean result"
+  (check-exn exn?
+             (lambda ()
+               (run-abstract "#lang racket/base\n(define ("))))

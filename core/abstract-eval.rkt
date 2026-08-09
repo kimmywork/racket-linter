@@ -4,9 +4,8 @@
 ;; Inspired by https://github.com/thalesfm/racket-analyzer
 ;;
 ;; This module implements a simplified abstract interpreter that can detect:
-;; - Type errors (applying non-procedure values)
-;; - Uninitialized variable usage (letrec with use before init)
-;; - Unreachable code (branches that always evaluate to #f)
+;; - Type errors (applying definitely non-procedure values or known arity failures)
+;; - Conservative bottom propagation through applications and branches
 
 (require
   racket/list
@@ -281,14 +280,12 @@
       
       ;; Application: check if proc is actually a procedure
       [(#%plain-app proc-expr arg-exprs ...)
-       (define proc-val (aeval #'proc-expr env))
-       (when (or (abstract-num? proc-val)
-                 (abstract-str? proc-val)
-                 (abstract-sym? proc-val)
-                 (abstract-bool? proc-val))
+       (define application-result (aeval stx env))
+       (when (⊥? application-result)
          (set! diagnostics
                (cons (diagnostic path 1 1 'error 'abstract/type-error
-                                 (format "Not a procedure: ~a" proc-val))
+                                 (format "Abstract application error: ~a"
+                                         (abstract-bottom-reason application-result)))
                      diagnostics)))
        (walk #'proc-expr env)
        (for ([arg (syntax->list #'(arg-exprs ...))])

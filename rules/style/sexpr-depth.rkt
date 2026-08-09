@@ -12,12 +12,12 @@
 (define-rule style/sexpr-depth
   #:id 'style/sexpr-depth
   #:severity 'warning
-  #:config-keys (hash)
+  #:config-keys (hash 'enabled #f 'max-depth 10)
   #:layer 'syntax
   (lambda (stx path config)
     (if (not (syntax? stx))
         '()
-        (let ([max-depth 10])
+        (let ([max-depth (hash-ref config 'max-depth 10)])
           (let recurse ([stx stx] [depth 0])
             (define is-list? (and (pair? (syntax-e stx)) (list? (syntax-e stx))))
             (define results

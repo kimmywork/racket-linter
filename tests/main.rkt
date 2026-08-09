@@ -7,4 +7,5 @@
          "abstract-test.rkt"
          "project-test.rkt"
          "check-syntax-test.rkt"
-         "engine-test.rkt")
+         "engine-test.rkt"
+         "rule-regression-test.rkt")

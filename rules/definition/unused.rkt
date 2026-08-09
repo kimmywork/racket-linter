@@ -12,7 +12,7 @@
 
 (define-rule definition/unused
   #:id 'definition/unused
-  #:severity 'warning
+  #:severity 'info
   #:config-keys (hash 'enabled #f)
   #:layer 'text
   (lambda (stx path config)

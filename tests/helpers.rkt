@@ -25,7 +25,10 @@
 (define (run-syntax-rule rules content)
   (define temp-file (make-temporary-file "test-~a.rkt"))
   (display-to-file (string-append "#lang racket/base\n" content "\n") temp-file #:exists 'replace)
-  (define diags (run-file rules (hash) (path->string temp-file)))
+  (define config
+    (for/hash ([rule (in-list rules)])
+      (values (rule-id rule) (hash 'enabled #t))))
+  (define diags (run-file rules config (path->string temp-file)))
   (delete-file temp-file)
   diags)
 

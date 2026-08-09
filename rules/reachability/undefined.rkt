@@ -16,7 +16,7 @@
 (define-rule reachability/undefined
   #:id 'reachability/undefined
   #:severity 'warning
-  #:config-keys (hash)
+  #:config-keys (hash 'enabled #f)
   #:layer 'syntax
   (lambda (stx path config)
     ;; Core forms and common built-in identifiers

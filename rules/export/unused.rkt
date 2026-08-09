@@ -19,6 +19,22 @@
   #:config-keys (hash 'enabled #f)
   #:layer 'syntax
   (lambda (stx path config)
+    (define (provided-specs value)
+      (define e (syntax-e value))
+      (cond
+        [(symbol? e) (list (list e value))]
+        [(and (pair? e)
+              (eq? (syntax-e (car e)) 'only-in))
+         (for/list ([name (in-list (cddr e))])
+           (list (syntax-e name) name))]
+        [(and (pair? e)
+              (eq? (syntax-e (car e)) 'rename-out))
+         (for/list ([mapping (in-list (cdr e))]
+                    #:when (pair? (syntax-e mapping)))
+           (define mapping-e (syntax-e mapping))
+           (list (syntax-e (second mapping-e))
+                 (second mapping-e)))]
+        [else '()]))
     (define (get-provided-ids stx)
       (cond
         [(not (syntax? stx)) '()]
@@ -26,33 +42,32 @@
          (define e (syntax-e stx))
          (cond
            [(and (pair? e) (eq? (syntax-e (car e)) 'provide))
-            (for/fold ([ids '()]) ([p (in-list (cdr e))])
-              (define p-e (syntax-e p))
-              (cond
-                [(symbol? p-e)
-                 (cons (list p-e p) ids)]
-                [(and (pair? p-e) (memq (car p-e) '(struct-out only-in rename-in)))
-                 (append ids (get-provided-ids p))]
-                [else ids]))]
+            (apply append (map provided-specs (cdr e)))]
            [(pair? e)
-            (apply append (map get-provided-ids (syntax-e stx)))]
+            (apply append (map get-provided-ids e))]
            [else '()])]))
     (define provided (get-provided-ids stx))
     (when (null? provided)
       '())
-    (define provided-names (map first provided))
     (define (collect-references stx)
       (cond
         [(not (syntax? stx)) '()]
+        [(identifier? stx) (list stx)]
         [else
          (define e (syntax-e stx))
-         (cond
-           [(identifier? stx)
-            (if (memq (syntax-e stx) provided-names) '() (list stx))]
-           [(pair? e)
-            (append (collect-references (car e))
-                    (apply append (map collect-references (cdr e))))]
-           [else '()])]))
+         (if (pair? e)
+             (let ([head (syntax-e (car e))])
+               (cond
+                 [(memq head '(provide require quote quasiquote syntax quasisyntax)) '()]
+                 [(eq? head 'define)
+                  (apply append (map collect-references (cddr e)))]
+                 [(eq? head 'define-values)
+                  (apply append (map collect-references (cddr e)))]
+                 [(memq head '(lambda let let* letrec))
+                  (apply append (map collect-references (cddr e)))]
+                 [else
+                  (apply append (map collect-references e))]))
+             '())]))
     (define all-references (collect-references stx))
     (define referenced-names (map syntax-e all-references))
     (define used-names (list->set referenced-names))

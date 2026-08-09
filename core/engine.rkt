@@ -53,7 +53,20 @@
       (if lang
           (regexp-replace-first #px"^#lang\\s+\\S+\\s*" text "")
           text))
-    (list (read-syntax path (open-input-string text-no-lang)))))
+    (define in (open-input-string text-no-lang))
+    (define forms
+      (let loop ()
+        (define stx (read-syntax path in))
+        (if (eof-object? stx)
+            '()
+            (cons stx (loop)))))
+    (if (null? forms)
+        '()
+        (list
+         (if (= (length forms) 1)
+             (first forms)
+             (let ([begin-stx (datum->syntax #f 'begin (vector path 1 0 1 1))])
+               (datum->syntax #f (cons begin-stx forms))))))))
 
 ;; Read all forms from a file for expansion
 (define (read-syntax-all path)

@@ -162,6 +162,28 @@
   (check-true (list? diags))
   (delete-file f))
 
+(test-case "run-file: syntax rule analyzes all top-level forms"
+  (define f (make-temp "#lang racket/base\n(define x 1)\n(displayln x)\n"))
+  (define diags
+    (run-file (list reachability/undefined)
+              (hash 'reachability/undefined (hash 'enabled #t))
+              (path->string f)))
+  (check-equal? (length diags) 0)
+  (delete-file f))
+
+(test-case "run-file: syntax depth uses configured max-depth"
+  (define nested
+    (for/fold ([value "1"])
+              ([_ (in-range 12)])
+      (format "(list ~a)" value)))
+  (define f (make-temp (string-append "#lang racket/base\n" nested "\n")))
+  (define diags
+    (run-file (list style/sexpr-depth)
+              (hash 'style/sexpr-depth (hash 'max-depth 20))
+              (path->string f)))
+  (check-equal? (length diags) 0)
+  (delete-file f))
+
 ;; ============================================================
 ;; merge-configs
 ;; ============================================================

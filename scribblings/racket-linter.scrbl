@@ -1,290 +1,242 @@
 #lang scribble/manual
 
-@(require scribble/eval
-          racket/class
+@(require racket/class
           (for-label racket/base
                      racket/contract
                      racket/string
-                     "../core/diagnostic.rkt"
-                     "../core/rule.rkt"
-                     "../core/engine.rkt"
-                     "../core/project.rkt"
-                     "../core/check-syntax.rkt"
-                     "../core/abstract-eval.rkt"))
+                     racket-linter/core/diagnostic
+                     racket-linter/core/rule
+                     racket-linter/core/engine
+                     racket-linter/core/project
+                     racket-linter/core/abstract-eval))
 
-@title{Racket Linter v0.2.0: A Configurable Code Analysis Tool}
-
+@title{Racket Linter v0.2.0}
 @author["kimmy"]
 
 @defmodule[racket-linter]
 
-Racket Linter is a configurable, extensible code analysis tool for Racket. It checks style, definitions, reachability, and export consistency across all @tt{*.rkt} files in a project.
+Racket Linter is a configurable, extensible static analysis tool for Racket
+projects. It scans @tt{*.rkt} files, runs text, syntax, and expansion rules,
+and reports file-level and project-level diagnostics.
+
+The Scribble manual is the source of truth for the command and rule contract.
+The repository README contains only a short development quick start.
 
 @table-of-contents[]
 
 @section{Quick Start}
 
-@subsection{Installation}
+Install the package or link a checkout:
 
-@verbatim|{
+@verbatim{
 raco pkg install /path/to/racket-linter
-}|
-
-Or link for development:
-
-@verbatim|{
 raco pkg install --link /path/to/racket-linter
-}|
+}
 
-@subsection{Basic Usage}
+Re-index a linked checkout after changing @tt{info.rkt} or command metadata:
 
-@verbatim|{
-raco lint <directory>
-}|
+@verbatim{
+raco setup --pkgs racket-linter
+}
 
-The linter recursively scans the directory for @tt{*.rkt} files and runs all enabled rules.
+Run the command:
 
-@subsection{Command-Line Options}
+@verbatim{
+raco lint /path/to/project
+raco lint --help
+raco lint --output json /path/to/project
+}
 
-@itemlist[
-  @item{@DFlag{fix} — Auto-fix fixable diagnostics}
-  @item{@DFlag{format} — Format all files using @tt{raco fmt}}
-  @item{@DFlag{no-config} — Ignore @tt{.racket-linter.rkt} config file}
-  @item{@DFlag{config} @tt{<file>} — Specify custom config file path}
-  @item{@DFlag{exclude} @tt{<dir>} — Exclude directory from analysis (can be repeated)}
-  @item{@DFlag{parallel} — Enable parallel file processing}
-  @item{@DFlag{output} @tt{<format>} — Output format: text, json, sarif, junit (default: text)}
-]
+The command exits with status @tt{0} when no diagnostics are produced and
+status @tt{1} when at least one diagnostic is produced. Invalid command-line
+arguments and internal rule failures also return a non-zero status.
 
 @section{Configuration}
 
-Create a @tt{.racket-linter.rkt} file in your project root. The file must return a hash mapping rule IDs to their configuration:
+Create @tt{.racket-linter.rkt} in the project root. The file may be a normal
+Racket module with a @tt{#lang} line and must evaluate to a hash:
 
-@racketblock[
+@verbatim{
+#lang racket/base
 (hash
-  'style/line-length (hash 'enabled #t 'max-length 102)
-  'definition/unused (hash 'enabled #t)
-  'reachability/unused-require (hash 'enabled #t))
-]
+  'style/line-length (hash 'max-length 120)
+  'reachability/unused-require (hash 'enabled #t)
+  'export/unused-project (hash 'enabled #f))
+}
 
-Rules not mentioned in the config use their built-in defaults. User config always overrides rule defaults.
+For compatibility, a configuration file containing only the hash expression
+is also accepted. User configuration is merged with each rule's defaults.
+Project-level diagnostics use the same rule IDs and configuration hash.
 
-@section{Rules}
+Configuration is evaluated as trusted Racket code. Do not load an untrusted
+project configuration without sandboxing or reviewing it first.
 
-@subsection{Style Rules}
-
-@tabular[#:style 'boxed
-  #:column-properties '(left left left)
-  #:row-properties '(bottom-border ())
-  (list (list @bold{Rule ID} @bold{Layer} @bold{Description})
-        (list "style/line-length" "text" "Lines exceeding max length (default: 102)")
-        (list "style/trailing-whitespace" "text" "Lines with trailing whitespace")
-        (list "style/newline-at-eof" "text" "File must end with newline")
-        (list "style/sexpr-depth" "syntax" "S-expression nesting depth > 10")
-        (list "style/definition-length" "text" "Single definition > 66 lines")
-        (list "style/file-length" "text" "File > 1000 lines")
-        (list "style/naming-convention" "text" "Detects underscores and camelCase")
-        (list "style/require-sort" "text" "Require arguments not sorted")
-        (list "style/provide-sort" "text" "Provide arguments not sorted")
-        (list "style/extract-let" "text" "Repeated expressions for let extraction")
-        (list "style/simplify-cond" "text" "Cond expressions that could be simplified"))]
-
-@subsection{Reachability Rules}
-
-@tabular[#:style 'boxed
-  #:column-properties '(left left left left)
-  #:row-properties '(bottom-border ())
-  (list (list @bold{Rule ID} @bold{Layer} @bold{Default} @bold{Description})
-        (list "reachability/undefined" "syntax" "enabled" "References to undefined identifiers")
-        (list "reachability/unused-require" "syntax" "disabled" "Required bindings not used")
-        (list "reachability/unused-require-expand" "expand" "disabled" "Unused requires via expansion"))]
-
-@subsection{Check-Syntax Rules}
-
-@tabular[#:style 'boxed
-  #:column-properties '(left left left)
-  #:row-properties '(bottom-border ())
-  (list (list @bold{Rule ID} @bold{Layer} @bold{Description})
-        (list "check-syntax/unused" "syntax" "Uses DrRacket's check-syntax API for precise detection"))]
-
-@subsection{Abstract Interpretation Rules}
-
-@tabular[#:style 'boxed
-  #:column-properties '(left left left)
-  #:row-properties '(bottom-border ())
-  (list (list @bold{Rule ID} @bold{Layer} @bold{Description})
-        (list "abstract/type-error" "expand" "Detects type errors via abstract interpretation")
-        (list "abstract/unreachable-code" "text" "Detects code after exit/raise"))]
-
-@subsection{Project-Level Rules}
-
-@tabular[#:style 'boxed
-  #:column-properties '(left left)
-  #:row-properties '(bottom-border ())
-  (list (list @bold{Rule ID} @bold{Description})
-        (list "module/circular-dependency" "Detects circular require chains")
-        (list "export/unused-project" "Exports not used by any other module"))]
-
-@section{Layer System}
-
-Rules declare a @bold{layer} that determines when they run:
+@section{Command Options}
 
 @itemlist[
-  @item{@bold{text} — runs on raw file text. Always executed, even for non-standard @tt{#lang} files.}
-  @item{@bold{syntax} — runs on the parsed syntax object. Only for safe @tt{#lang} declarations.}
-  @item{@bold{expand} — runs on the expanded syntax object. Enables deeper analysis.}
-  @item{@bold{both} — runs in both the text and syntax phases.}
+ @item{@DFlag{help} prints usage and exits successfully.}
+ @item{@DFlag{fix} applies the supported text fixes.}
+ @item{@DFlag{format} runs @tt{raco fmt} on discovered files.}
+ @item{@DFlag{no-config} ignores the project configuration.}
+ @item{@DFlag{config} @tt{<file>} selects a configuration file.}
+ @item{@DFlag{exclude} @tt{<directory>} excludes matching paths; it can be repeated.}
+ @item{@DFlag{parallel} analyzes files concurrently and collects results in file order.}
+ @item{@DFlag{output} @tt{<text|json|sarif|junit>} selects the output format.}
 ]
+
+Only one project directory argument is accepted. JSON, SARIF, and JUnit output
+are machine-readable; all strings are escaped by their respective serializers.
+
+@section{Rule Inventory}
+
+The following table describes the rules registered by the CLI. Rules marked
+@tt{enabled} run unless disabled by configuration. Rules marked @tt{disabled}
+are available but opt-in.
+
+@tabular[#:style 'boxed
+ #:column-properties '(left left left left)
+ #:row-properties '(bottom-border ())
+ (list
+  (list @bold{Rule ID} @bold{Layer} @bold{Default} @bold{Contract})
+  (list "style/line-length" "text" "enabled" "Reports lines over configurable max-length; default 102")
+  (list "style/trailing-whitespace" "text" "enabled" "Reports trailing spaces or tabs")
+  (list "style/newline-at-eof" "text" "enabled" "Requires a final newline")
+  (list "style/sexpr-depth" "syntax" "disabled" "Reports syntax nesting over configurable max-depth; default 10")
+  (list "style/definition-length" "text" "enabled" "Reports definitions over 66 lines")
+  (list "style/file-length" "text" "enabled" "Reports files over 1000 lines")
+  (list "style/naming-convention" "text" "disabled" "Reports underscores and camelCase")
+  (list "style/require-sort" "text" "disabled" "Reports unsorted require forms")
+  (list "style/provide-sort" "text" "disabled" "Reports unsorted provide forms")
+  (list "style/extract-let" "text" "disabled" "Suggests extracting repeated expressions")
+  (list "style/simplify-cond" "text" "disabled" "Suggests else instead of a final #t clause")
+  (list "definition/unused" "text" "disabled" "Regex-based top-level unused definition heuristic")
+  (list "reachability/undefined" "syntax" "disabled" "Reports references not resolved by the local scanner")
+  (list "reachability/unused-require" "syntax" "disabled" "Reports unused required bindings using syntax scanning")
+  (list "reachability/unused-require-expand" "expand" "disabled" "Reports unused requires after expansion")
+  (list "export/unused" "syntax" "disabled" "Reports exports not used within one module")
+  (list "module/require-provide" "syntax" "disabled" "Reports provided names without local definitions")
+  (list "abstract/type-error" "expand" "disabled" "Conservative definite non-procedure application checks")
+  (list "abstract/unreachable-code" "text" "disabled" "Heuristic scan for code after exit, raise, or error")
+  (list "check-syntax/unused" "syntax" "disabled" "Uses DrRacket check-syntax callbacks when available")
+  (list "module/circular-dependency" "project" "enabled" "Reports cycles in the simplified require graph")
+  (list "export/unused-project" "project" "disabled" "Reports exports unused by files in this project"))]
+
+The project-level export rule cannot know about consumers outside the scanned
+project. Library projects should normally disable it or use a project-specific
+entry-point policy.
+
+@section{Analysis Layers}
+
+Rules declare one of these layers:
+
+@itemlist[
+ @item{@tt{text} receives raw file text and runs for every file.}
+ @item{@tt{syntax} receives syntax only for languages in the safe-language whitelist.}
+ @item{@tt{expand} receives expanded syntax only for safe languages. Expansion errors become diagnostics.}
+ @item{@tt{both} runs in both the text and syntax phases.}
+ @item{@tt{project} is implemented by the project analysis pass and receives the discovered file set.}
+]
+
+Non-whitelisted languages are analyzed by text rules only. This is intentional:
+expansion can load modules and execute compile-time code.
+
+@section{Abstract Evaluation}
+
+@itemlist[
+ @item{@tt{analyze-abstract} accepts expanded syntax and a source path, and returns a list of diagnostics.}
+ @item{The current domain includes top, bottom, numbers, strings, symbols, booleans, procedures, lists, and pairs.}
+ @item{It detects applications of values proven to be non-procedures and simple known procedure arity errors.}
+]
+
+The interpreter has a bounded fixpoint loop for recursive bindings, but it is
+not a Racket type checker and does not prove general program properties. Unknown
+values are represented by top and should not produce a definite type diagnostic.
+The separate @tt{abstract/unreachable-code} rule is currently a text heuristic;
+it is not a proof generated by the abstract interpreter.
 
 @section{Auto-Fix}
 
-Some rules support automatic fixing:
-
-@verbatim|{
-raco lint --fix <directory>
-}|
-
-Supported auto-fix rules:
+Supported fixes are intentionally limited:
 
 @itemlist[
-  @item{@bold{style/trailing-whitespace} — removes trailing whitespace}
-  @item{@bold{style/newline-at-eof} — adds missing newline at end of file}
-  @item{@bold{style/require-sort} — sorts require arguments alphabetically}
-  @item{@bold{style/provide-sort} — sorts provide arguments alphabetically}
-  @item{@bold{style/simplify-cond} — replaces @tt{#t} with @tt{else} in cond forms}
-  @item{@bold{style/extract-let} — extracts repeated expressions to define bindings}
+ @item{trailing whitespace removal}
+ @item{missing final newline insertion}
+ @item{simple require sorting}
+ @item{simple provide sorting}
+ @item{final @tt{#t} to @tt{else} replacement in cond text}
+ @item{the current simplified extract-let transformation}
 ]
+
+Use @DFlag{fix} only after reviewing the proposed diagnostics. The text-based
+fixers do not provide a semantic proof of the rewritten program.
 
 @section{Output Formats}
 
-The linter supports multiple output formats for CI/CD integration:
-
-@verbatim|{
-# JSON output
-raco lint --output json <directory>
-
-# SARIF output (GitHub Code Scanning)
-raco lint --output sarif <directory>
-
-# JUnit XML output
-raco lint --output junit <directory>
-}|
-
-@section{Safe Language Whitelist}
-
-Files with these @tt{#lang} declarations are parsed with @racket[read-syntax] for syntax-level analysis:
-
-@tt{racket}, @tt{racket/base}, @tt{racket/contract}, @tt{racket/contract/base}, @tt{racket/class}, @tt{racket/date}, @tt{racket/dict}, @tt{racket/function}, @tt{racket/list}, @tt{racket/match}, @tt{racket/math}, @tt{racket/port}, @tt{racket/pretty}, @tt{racket/require}, @tt{racket/set}, @tt{racket/string}, @tt{racket/vector}, @tt{racket/format}, @tt{racket/gui}, @tt{racket/gui/base}, @tt{racket/future}, @tt{racket/flonum}, @tt{racket/fixnum}, @tt{racket/unsafe/ops}
-
-@section{API Reference}
-
-@subsection{Core Types}
-
-@defstruct*[diagnostic ([path path-string?]
-                        [line exact-positive-integer?]
-                        [col exact-nonnegative-integer?]
-                        [severity (one-of/c 'error 'warning 'info)]
-                        [rule-id symbol?]
-                        [message string?])]{
-  Represents a diagnostic finding from a rule.
-}
-
-@defstruct*[rule ([id symbol?]
-                  [severity (one-of/c 'error 'warning 'info)]
-                  [config-keys hash?]
-                  [layer (one-of/c 'text 'syntax 'expand 'both)]
-                  [check (-> (or/c syntax? #f) path-string? hash? (listof diagnostic?))])]{
-  Represents a linter rule.
-}
-
-@subsection{Engine}
-
-@defproc[(run-file [rules (listof rule?)]
-                   [config hash?]
-                   [path path-string?])
-         (listof diagnostic?)]{
-  Runs all rules on a single file and returns diagnostics.
-}
-
-@defproc[(merge-configs [default hash?]
-                        [user hash?])
-         hash?]{
-  Merges two configuration hashes, with user values overriding defaults.
-}
-
-@subsection{Project Analysis}
-
-@defproc[(analyze-project [files (listof path-string?)])
-         (listof diagnostic?)]{
-  Analyzes a project for cross-file issues like circular dependencies and unused exports.
-}
-
-@defproc[(build-dependency-graph [files (listof path-string?)])
-         hash?]{
-  Builds a dependency graph from a list of files.
-}
-
-@subsection{Check-Syntax Integration}
-
-@defproc[(check-syntax-analyze [path path-string?])
-         (listof diagnostic?)]{
-  Analyzes a file using DrRacket's check-syntax API for precise unused variable/require detection.
-}
-
-@subsection{Abstract Interpretation}
-
-@defproc[(analyze-abstract [stx syntax?]
-                           [path path-string?])
-         (listof diagnostic?)]{
-  Analyzes expanded syntax using abstract interpretation to detect type errors and unreachable code.
-}
-
-@section{Examples}
-
-@subsection{Basic Usage}
-
-@verbatim|{
-# Check a directory
-raco lint /path/to/project
-
-# Auto-fix issues
-raco lint --fix /path/to/project
-
-# Format and check
-raco lint --format /path/to/project
-
-# Parallel processing
-raco lint --parallel /path/to/project
-
-# JSON output for CI
+@verbatim{
 raco lint --output json /path/to/project
+raco lint --output sarif /path/to/project
+raco lint --output junit /path/to/project
+}
 
-# Exclude test directory
-raco lint --exclude tests /path/to/project
-}|
+JSON is an object containing a @tt{diagnostics} array. SARIF uses version 2.1.0
+with one run. JUnit emits one testcase per diagnostic. All three formats are
+serialized structurally rather than assembled from unescaped strings.
 
-@subsection{Configuration File}
+@section{Core API}
 
-@racketblock[
-;; .racket-linter.rkt
-(hash
-  ;; Enable specific rules
-  'style/line-length (hash 'enabled #t 'max-length 120)
-  'reachability/unused-require (hash 'enabled #t)
-  
-  ;; Disable specific rules
-  'definition/unused (hash 'enabled #f))
+The public core modules provide these values:
+
+@itemlist[
+ @item{@tt{diagnostic}, @tt{diagnostic?}, and diagnostic accessors for locations and messages.}
+ @item{@tt{rule}, @tt{rule?}, @tt{define-rule}, and rule accessors for rule registration.}
+ @item{@tt{run-file} for file-level rule execution.}
+ @item{@tt{merge-configs} for recursive default/user configuration merging.}
+ @item{@tt{analyze-project}, @tt{build-dependency-graph}, and project diagnostics.}
+ @item{@tt{analyze-abstract} for conservative expanded-syntax analysis.}
 ]
 
-@subsection{Custom Rules}
+A rule check receives syntax or @tt{#f}, a path string, and its merged
+configuration hash, and returns a list of diagnostics. The CLI adds an
+@tt{linter/internal-error} diagnostic when a rule raises an exception.
 
-@codeblock|{
-;; .racket-linter-rules/my-rule.rkt
+
+@section{Testing and Reliability}
+
+Run the package tests after changing rules or the engine:
+
+@verbatim{
+raco test tests
+raco setup --pkgs racket-linter
+raco lint --no-config --output json /path/to/a/fixture-project
+}
+
+Rule tests should assert the diagnostic rule ID, severity, location, and
+message for positive cases, and explicitly assert zero diagnostics for valid
+cases. Tests that only assert that a result is a list do not establish rule
+correctness. Expansion tests must distinguish a valid no-diagnostic result from
+an expansion failure.
+
+@section{Known Limitations}
+
+@itemlist[
+ @item{The undefined-identifier rule is a local syntax scanner, not binding-identity analysis. It can require project-specific exclusions.}
+ @item{Project export analysis cannot observe library consumers outside the scanned directory.}
+ @item{The abstract interpreter is conservative and incomplete; it is not a full type system or theorem prover.}
+ @item{The unreachable-code rule is text-based and should be treated as a heuristic.}
+ @item{The check-syntax adapter depends on DrRacket APIs and may not expose every binding diagnostic.}
+ @item{The simplified require/provide graph does not fully model phases, submodules, collection resolution, or dynamic requires.}
+ @item{Configuration evaluation is trusted-code execution.}
+ @item{Auto-fixes are syntax/text transformations and require review.}
+]
+
+@section{Custom Rules}
+
+A custom rule module can export a @tt{custom-rules} list:
+
+@verbatim{
 #lang racket/base
 (require racket-linter/core/rule
          racket-linter/core/diagnostic)
-
-(provide custom-rules)
 
 (define-rule my/custom-rule
   #:id 'my/custom-rule
@@ -292,21 +244,11 @@ raco lint --exclude tests /path/to/project
   #:config-keys (hash 'enabled #t)
   #:layer 'text
   (lambda (stx path config)
-    ;; Your rule logic here
     '()))
 
+(provide custom-rules)
 (define custom-rules (list my/custom-rule))
-}|
-
-@section{Limitations}
-
-@itemlist[
-  @item{@bold{definition/unused} is a regex-based placeholder with high false positives.}
-  @item{@bold{eval} in @tt{.racket-linter.rkt} loading is a security risk for untrusted projects.}
-  @item{@bold{Cross-module rules} need a separate dispatch mechanism beyond @racket[run-file].}
-  @item{@bold{check-syntax integration} uses @racket[show-content] which may not capture all diagnostics.}
-  @item{@bold{extract-let auto-fix} is simplified — inserts defines at module level, not optimal let bindings.}
-]
+}
 
 @section{License}
 
