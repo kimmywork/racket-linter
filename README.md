@@ -99,6 +99,7 @@ Rules not mentioned in the config use their built-in defaults. User config alway
 | Rule ID | Layer | Description |
 |---------|-------|-------------|
 | `abstract/type-error` | expand | Detects type errors via abstract interpretation |
+| `abstract/unreachable-code` | text | Detects code after exit/raise that may be unreachable |
 
 ### Project-Level Rules
 
@@ -106,6 +107,21 @@ Rules not mentioned in the config use their built-in defaults. User config alway
 |---------|-------------|
 | `module/circular-dependency` | Detects circular require chains |
 | `export/unused-project` | Exports not used by any other module in project |
+
+## Auto-Fix
+
+Some rules support automatic fixing:
+
+```bash
+raco lint --fix <directory>
+```
+
+Rules with auto-fix support:
+
+- `style/trailing-whitespace` — removes trailing whitespace
+- `style/newline-at-eof` — adds missing newline at end of file
+- `style/require-sort` — sorts require arguments alphabetically
+- `style/provide-sort` — sorts provide arguments alphabetically
 
 ## Layer System
 
