@@ -13,7 +13,7 @@
 (define-rule definition/unused
   #:id 'definition/unused
   #:severity 'warning
-  #:config-keys (hash)
+  #:config-keys (hash 'enabled #f)
   #:layer 'text
   (lambda (stx path config)
     (define text (port->string (open-input-file path)))

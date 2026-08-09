@@ -35,24 +35,14 @@
           style/sexpr-depth style/definition-length style/file-length
           definition/unused reachability/undefined reachability/unused-require
           export/unused module/require-provide))
-  (define default-config (hash 'definition/unused (hash 'enabled #f)
-                               'reachability/unused-require (hash 'enabled #f)
-                               'export/unused (hash 'enabled #f)
-                               'module/require-provide (hash 'enabled #f)))
   (define user-config-file (build-path dir ".racket-linter.rkt"))
   (define user-config
     (if (file-exists? user-config-file)
-        (with-handlers ([exn? (lambda (e) default-config)])
+        (with-handlers ([exn? (lambda (e) (hash))])
           (parameterize ([current-namespace (make-base-namespace)])
             (eval (call-with-input-file user-config-file read))))
-        default-config))
-  (define (merge-configs a b)
-    (for/fold ([result a]) ([(k v) (in-hash b)])
-      (hash-set result k (if (hash-has-key? result k)
-                             (for/fold ([inner (hash-ref result k)]) ([(ik iv) (in-hash v)])
-                               (hash-set inner ik iv))
-                             v))))
-  (define merged-config (merge-configs default-config user-config))
+        (hash)))
+  (define merged-config user-config)
   (define diagnostics
     (apply append (map (lambda (f) (run-file all-rules merged-config f)) files)))
   (print-diagnostics diagnostics)

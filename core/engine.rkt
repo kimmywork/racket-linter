@@ -14,7 +14,8 @@
 
 (provide
   (contract-out
-    [run-file (-> (listof rule?) hash? path-string? (listof diagnostic?))]))
+    [run-file (-> (listof rule?) hash? path-string? (listof diagnostic?))])
+  merge-configs)
 
 (define (safe-lang? lang-str)
   (member lang-str
