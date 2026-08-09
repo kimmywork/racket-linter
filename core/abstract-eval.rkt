@@ -35,7 +35,7 @@
 
 (struct abstract-top () #:transparent)
 (struct abstract-bottom (reason) #:transparent)
-(struct abstract-proc (source) #:transparent)
+(struct abstract-proc (source param-count) #:transparent)
 (struct abstract-num () #:transparent)
 (struct abstract-str () #:transparent)
 (struct abstract-sym () #:transparent)
@@ -47,7 +47,7 @@
 (define (T? v) (abstract-top? v))
 (define (⊥ reason) (abstract-bottom reason))
 (define (⊥? v) (abstract-bottom? v))
-(define (make-proc src) (abstract-proc src))
+(define (make-proc src [param-count 0]) (abstract-proc src param-count))
 (define (make-num) (abstract-num))
 (define (make-str) (abstract-str))
 (define (make-sym) (abstract-sym))
@@ -78,9 +78,15 @@
     [(#%top . id)
      (env-ref env #'id)]
     
-    ;; Lambda
+    ;; Lambda - store parameter type information
     [(#%plain-lambda formals body ...)
-     (make-proc stx)]
+     (define formal-list (syntax->list #'formals))
+     (define param-count
+       (cond
+         [formal-list (length formal-list)]
+         [(identifier? #'formals) 1] ; rest argument only
+         [else 0]))
+     (make-proc stx param-count)]
     
     ;; Define-values (top-level definition)
     [(define-values (id ...) expr)
@@ -222,7 +228,13 @@
         (if (andmap (lambda (v) (or (abstract-num? v) (T? v))) arg-vals)
             (make-num)
             (⊥ "numeric operation requires numeric arguments"))]
-       [(abstract-proc? proc-val) T]
+       ;; Handle user-defined procedures - check argument count
+       [(abstract-proc? proc-val)
+        (define expected (abstract-proc-param-count proc-val))
+        (define actual (length arg-vals))
+        (if (= expected actual)
+            T
+            (⊥ (format "procedure expects ~a arguments, given ~a" expected actual)))]
        [(T? proc-val) T]
        [(abstract-num? proc-val) (⊥ "not a procedure")]
        [(abstract-str? proc-val) (⊥ "not a procedure")]
@@ -314,6 +326,20 @@
              e
              (let ([result (walk (car bodies) e)])
                (loop (cdr bodies) (if (void? result) e result)))))]
+      
+      ;; Module-begin: walk all forms
+      [(#%module-begin body ...)
+       (let loop ([bodies (syntax->list #'(body ...))] [e env])
+         (if (null? bodies)
+             e
+             (let ([result (walk (car bodies) e)])
+               (loop (cdr bodies) (if (void? result) e result)))))]
+      
+      ;; Module: walk the body
+      [(module name lang body ...)
+       (for ([b (syntax->list #'(body ...))])
+         (walk b env))
+       env]
       
       ;; If: check if test is always false
       [(if test-expr then-expr else-expr)
