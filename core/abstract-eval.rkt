@@ -30,6 +30,8 @@
 ;; sym = symbol value
 ;; bool = boolean value
 ;; proc = procedure value
+;; lst = list value
+;; pair = pair value (car has type, cdr has type)
 
 (struct abstract-top () #:transparent)
 (struct abstract-bottom (reason) #:transparent)
@@ -38,6 +40,8 @@
 (struct abstract-str () #:transparent)
 (struct abstract-sym () #:transparent)
 (struct abstract-bool (val) #:transparent)
+(struct abstract-lst () #:transparent)
+(struct abstract-pair (car-type cdr-type) #:transparent)
 
 (define T (abstract-top))
 (define (T? v) (abstract-top? v))
@@ -48,6 +52,8 @@
 (define (make-str) (abstract-str))
 (define (make-sym) (abstract-sym))
 (define (make-bool v) (abstract-bool v))
+(define (make-lst) (abstract-lst))
+(define (make-pair car-type cdr-type) (abstract-pair car-type cdr-type))
 
 ;; Environment: maps identifiers to abstract values
 (define (make-env) (make-immutable-bound-id-table))
@@ -183,8 +189,39 @@
     ;; Application
     [(#%plain-app proc-expr arg-exprs ...)
      (define proc-val (aeval #'proc-expr env))
+     (define arg-vals (map (lambda (arg) (aeval arg env)) (syntax->list #'(arg-exprs ...))))
      (cond
        [(⊥? proc-val) proc-val]
+       ;; Handle built-in list functions
+       [(and (identifier? #'proc-expr) (eq? (syntax-e #'proc-expr) 'list))
+        (make-lst)]
+       [(and (identifier? #'proc-expr) (eq? (syntax-e #'proc-expr) 'cons))
+        (if (= (length arg-vals) 2)
+            (make-pair (first arg-vals) (second arg-vals))
+            (⊥ "cons requires exactly 2 arguments"))]
+       [(and (identifier? #'proc-expr) (eq? (syntax-e #'proc-expr) 'car))
+        (if (= (length arg-vals) 1)
+            (let ([arg (first arg-vals)])
+              (cond
+                [(abstract-pair? arg) (abstract-pair-car-type arg)]
+                [(abstract-lst? arg) T]
+                [(⊥? arg) arg]
+                [else T]))
+            (⊥ "car requires exactly 1 argument"))]
+       [(and (identifier? #'proc-expr) (eq? (syntax-e #'proc-expr) 'cdr))
+        (if (= (length arg-vals) 1)
+            (let ([arg (first arg-vals)])
+              (cond
+                [(abstract-pair? arg) (abstract-pair-cdr-type arg)]
+                [(abstract-lst? arg) (make-lst)]
+                [(⊥? arg) arg]
+                [else T]))
+            (⊥ "cdr requires exactly 1 argument"))]
+       ;; Handle numeric operations
+       [(and (identifier? #'proc-expr) (memq (syntax-e #'proc-expr) '(+ - * /)))
+        (if (andmap (lambda (v) (or (abstract-num? v) (T? v))) arg-vals)
+            (make-num)
+            (⊥ "numeric operation requires numeric arguments"))]
        [(abstract-proc? proc-val) T]
        [(T? proc-val) T]
        [(abstract-num? proc-val) (⊥ "not a procedure")]
