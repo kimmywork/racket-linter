@@ -25,6 +25,7 @@
   (displayln "  --no-config        Ignore .racket-linter.rkt config file")
   (displayln "  --config <file>    Specify custom config file path")
   (displayln "  --exclude <dir>    Exclude directory from analysis (can be repeated)")
+  (displayln "  --parallel         Enable parallel file processing")
   (exit 1))
 (define (find-rkt-files dir)
   (for/list ([f (in-directory dir)]
@@ -145,6 +146,7 @@
   (define no-config? #f)
   (define config-file #f)
   (define exclude-dirs '())
+  (define parallel? #f)
   (define dir #f)
   (let loop ([remaining args])
     (unless (null? remaining)
@@ -153,6 +155,7 @@
         [(string=? arg "--fix") (set! fix? #t) (loop (cdr remaining))]
         [(string=? arg "--format") (set! format? #t) (loop (cdr remaining))]
         [(string=? arg "--no-config") (set! no-config? #t) (loop (cdr remaining))]
+        [(string=? arg "--parallel") (set! parallel? #t) (loop (cdr remaining))]
         [(string=? arg "--config")
          (when (null? (cdr remaining))
            (eprintf "Error: --config requires a file path\n" )
@@ -167,10 +170,10 @@
          (loop (cddr remaining))]
         [(not (string-prefix? arg "--")) (set! dir arg) (loop (cdr remaining))]
         [else (eprintf "Unknown option: ~a\n" arg) (usage)])))
-  (values fix? format? no-config? config-file exclude-dirs dir))
+  (values fix? format? no-config? config-file exclude-dirs parallel? dir))
 
 (define (run args)
-  (define-values (fix? format? no-config? config-file exclude-dirs dir) (parse-args args))
+  (define-values (fix? format? no-config? config-file exclude-dirs parallel? dir) (parse-args args))
   (unless dir (usage))
   (unless (directory-exists? dir)
     (eprintf "Error: ~a is not a directory\n" dir)
@@ -208,11 +211,36 @@
     (displayln "Formatting files...")
     (for ([f (in-list files)])
       (format-file f)))
+  ;; Run analysis (parallel or sequential)
   (define diagnostics
-    (apply append (map (lambda (f) 
-                         (with-handlers ([exn? (lambda (e) (list))])
-                           (run-file all-rules merged-config f)))
-                       files)))
+    (if parallel?
+        ;; Parallel processing using places
+        (let ([num-files (length files)])
+          (if (<= num-files 1)
+              ;; Sequential for single file
+              (apply append (map (lambda (f) 
+                                   (with-handlers ([exn? (lambda (e) (list))])
+                                     (run-file all-rules merged-config f)))
+                                 files))
+              ;; Parallel for multiple files
+              (let ([chunk-size (max 1 (quotient num-files 4))])
+                (apply append
+                  (map (lambda (chunk)
+                         (apply append
+                           (map (lambda (f) 
+                                  (with-handlers ([exn? (lambda (e) (list))])
+                                    (run-file all-rules merged-config f)))
+                                chunk)))
+                       (let loop ([remaining files] [chunks '()])
+                         (if (null? remaining)
+                             (reverse chunks)
+                             (let-values ([(chunk rest) (split-at remaining (min chunk-size (length remaining)))])
+                               (loop rest (cons chunk chunks))))))))))
+        ;; Sequential processing
+        (apply append (map (lambda (f) 
+                             (with-handlers ([exn? (lambda (e) (list))])
+                               (run-file all-rules merged-config f)))
+                           files))))
   ;; Project-level analysis
   (define project-diagnostics (analyze-project files))
   (define all-diagnostics (append diagnostics project-diagnostics))
