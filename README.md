@@ -17,10 +17,18 @@ raco pkg install --link /path/to/racket-linter
 ## Usage
 
 ```bash
-raco lint <directory>
+raco lint [options] <directory>
 ```
 
 The linter recursively scans the directory for `*.rkt` files and runs all enabled rules.
+
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `--fix` | Auto-fix trailing whitespace and missing EOF newline |
+| `--format` | Format all files using `raco fmt` (requires `fmt` package) |
+| `--no-config` | Ignore `.racket-linter.rkt` config file |
 
 ## Configuration
 
@@ -100,7 +108,22 @@ Rules with auto-fix support:
 
 - `style/trailing-whitespace` — removes trailing whitespace
 - `style/newline-at-eof` — adds missing newline at end of file
-- `style/line-length` — (limited) wraps long lines
+
+## Formatter Integration
+
+The linter integrates with [`racket-fmt`](https://docs.racket-lang.org/fmt/) for code formatting:
+
+```bash
+raco lint --format <directory>
+```
+
+This runs `raco fmt` on all `.rkt` files in the directory. Install the `fmt` package first:
+
+```bash
+raco pkg install fmt
+```
+
+The formatter respects the same width limit as `style/line-length` (default: 102 characters).
 
 ## Safe Language Whitelist
 
