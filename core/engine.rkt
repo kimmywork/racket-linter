@@ -61,6 +61,12 @@
         (hash-set result k (merge-configs (hash-ref result k) v))
         (hash-set result k v))))
 
+;; Layer system:
+;; 'text   - runs on raw text (stx is #f), always executed
+;; 'syntax - runs on parsed syntax (stx is syntax?), only for safe languages
+;; 'both   - runs in BOTH text and syntax phases (stx is #f then syntax?)
+;; Cross-module rules need a separate dispatch mechanism beyond run-file.
+
 (define (run-file rules config path)
   (define text (call-with-input-file path port->string))
   (define lang (detect-lang-from-text text))

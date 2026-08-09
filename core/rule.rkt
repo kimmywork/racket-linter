@@ -6,6 +6,12 @@
 (struct rule (id severity config-keys check layer)
   #:transparent)
 
+;; Layer values:
+;; 'text   - rule runs on raw text (stx argument is #f)
+;; 'syntax - rule runs on parsed syntax object
+;; 'both   - rule runs in BOTH text and syntax phases
+;; Default (when #:layer is omitted) is 'syntax.
+
 (define-syntax (define-rule stx)
   (syntax-case stx ()
     [(_ name
