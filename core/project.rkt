@@ -26,36 +26,67 @@
   (define text (call-with-input-file path port->string))
   (define lines (string-split text "\n"))
   
-  ;; Extract provide names
+  ;; Extract provide names (handle multi-line forms)
   (define provides
-    (for/fold ([acc '()]) ([line (in-list lines)])
-      (define trimmed (string-trim line))
+    (let loop ([lines lines] [acc '()] [in-provide? #f] [provide-text ""])
       (cond
-        ;; (provide name ...)
-        ((regexp-match? #px"^\\(provide\\s+" trimmed)
-         (define args (regexp-replace #px"^\\(provide\\s+" trimmed ""))
-         (define args-clean (regexp-replace #px"\\)\\s*$" args ""))
-         (append acc (string-split args-clean)))
-        ;; (provide (all-defined-out))
-        ((regexp-match? #px"^\\(provide\\s+\\(all-defined-out\\)\\)" trimmed)
-         (append acc '(all-defined-out)))
-        (else acc))))
+        [(null? lines) acc]
+        [else
+         (define trimmed (string-trim (car lines)))
+         (cond
+           ;; Start of provide form
+           [(and (not in-provide?) (regexp-match? #px"^\\(provide\\s+" trimmed))
+            (if (regexp-match? #px"\\)\\s*$" trimmed)
+                ;; Single-line provide
+                (let ([args (regexp-replace #px"^\\(provide\\s+" trimmed "")]
+                      [args-clean (regexp-replace #px"\\)\\s*$" "")])
+                  (loop (cdr lines) (append acc (string-split args-clean)) #f ""))
+                ;; Multi-line provide
+                (loop (cdr lines) acc #t trimmed))]
+           ;; Continuation of multi-line provide
+           [(and in-provide? (not (regexp-match? #px"\\)\\s*$" trimmed)))
+            (loop (cdr lines) acc #t (string-append provide-text " " trimmed))]
+           ;; End of multi-line provide
+           [(and in-provide? (regexp-match? #px"\\)\\s*$" trimmed))
+            (define full-text (string-append provide-text " " trimmed))
+            (define args (regexp-replace #px"^\\(provide\\s+" full-text ""))
+            (define args-clean (regexp-replace #px"\\)\\s*$" args ""))
+            (loop (cdr lines) (append acc (string-split args-clean)) #f "")]
+           ;; Not in provide
+           [else (loop (cdr lines) acc #f "")])])))
   
-  ;; Extract require module paths
+  ;; Extract require module paths (handle multi-line forms)
   (define requires
-    (for/fold ([acc '()]) ([line (in-list lines)])
-      (define trimmed (string-trim line))
+    (let loop ([lines lines] [acc '()] [in-require? #f] [require-text ""])
       (cond
-        ;; (require module-path ...)
-        ((regexp-match? #px"^\\(require\\s+" trimmed)
-         (define args (regexp-replace #px"^\\(require\\s+" trimmed ""))
-         (define args-clean (regexp-replace #px"\\)\\s*$" args ""))
-         (define module-paths (string-split args-clean))
-         ;; Filter out complex forms like (only-in ...) and (except-in ...)
-         (define simple-paths
-           (filter (lambda (p) (not (regexp-match? #px"^\\(" p))) module-paths))
-         (append acc simple-paths))
-        (else acc))))
+        [(null? lines) acc]
+        [else
+         (define trimmed (string-trim (car lines)))
+         (cond
+           ;; Start of require form
+           [(and (not in-require?) (regexp-match? #px"^\\(require\\s+" trimmed))
+            (if (regexp-match? #px"\\)\\s*$" trimmed)
+                ;; Single-line require
+                (let* ([args (regexp-replace #px"^\\(require\\s+" trimmed "")]
+                       [args-clean (regexp-replace #px"\\)\\s*$" args "")]
+                       [module-paths (string-split args-clean)]
+                       [simple-paths (filter (lambda (p) (not (regexp-match? #px"^\\(" p))) module-paths)])
+                  (loop (cdr lines) (append acc simple-paths) #f ""))
+                ;; Multi-line require
+                (loop (cdr lines) acc #t trimmed))]
+           ;; Continuation of multi-line require
+           [(and in-require? (not (regexp-match? #px"\\)\\s*$" trimmed)))
+            (loop (cdr lines) acc #t (string-append require-text " " trimmed))]
+           ;; End of multi-line require
+           [(and in-require? (regexp-match? #px"\\)\\s*$" trimmed))
+            (define full-text (string-append require-text " " trimmed))
+            (define args (regexp-replace #px"^\\(require\\s+" full-text ""))
+            (define args-clean (regexp-replace #px"\\)\\s*$" args ""))
+            (define module-paths (string-split args-clean))
+            (define simple-paths (filter (lambda (p) (not (regexp-match? #px"^\\(" p))) module-paths))
+            (loop (cdr lines) (append acc simple-paths) #f "")]
+           ;; Not in require
+           [else (loop (cdr lines) acc #f "")])])))
   
   (module-info path provides requires))
 
@@ -100,12 +131,26 @@
 
 ;; Resolve a require path to an absolute file path
 (define (resolve-require from-path require-str)
-  ;; Simple heuristic: try to find the file in the same directory
-  ;; A full implementation would use Racket's module resolver
+  ;; Try multiple resolution strategies:
+  ;; 1. Same directory (relative path)
+  ;; 2. Parent directory (for nested modules)
+  ;; 3. Project root (for absolute paths)
   (define dir (path-only (string->path from-path)))
   (define candidates
-    (list (build-path dir (string->path (string-append require-str ".rkt")))
-          (build-path dir (string->path require-str))))
+    (list 
+      ;; Same directory
+      (build-path dir (string->path (string-append require-str ".rkt")))
+      (build-path dir (string->path require-str))
+      ;; Parent directory (for nested modules like "../core/rule.rkt")
+      (build-path (simplify-path (build-path dir "..")) 
+                  (string->path (string-append require-str ".rkt")))
+      (build-path (simplify-path (build-path dir ".."))
+                  (string->path require-str))
+      ;; Two levels up
+      (build-path (simplify-path (build-path dir ".." ".."))
+                  (string->path (string-append require-str ".rkt")))
+      (build-path (simplify-path (build-path dir ".." ".."))
+                  (string->path require-str))))
   (for/first ([c (in-list candidates)]
                #:when (file-exists? c))
     (path->string c)))
