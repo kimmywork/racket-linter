@@ -9,9 +9,10 @@
                      "../core/rule.rkt"
                      "../core/engine.rkt"
                      "../core/project.rkt"
-                     "../core/check-syntax.rkt"))
+                     "../core/check-syntax.rkt"
+                     "../core/abstract-eval.rkt"))
 
-@title{Racket Linter: A Configurable Code Analysis Tool}
+@title{Racket Linter v0.2.0: A Configurable Code Analysis Tool}
 
 @author["kimmy"]
 
@@ -49,6 +50,10 @@ The linter recursively scans the directory for @tt{*.rkt} files and runs all ena
   @item{@DFlag{fix} — Auto-fix fixable diagnostics}
   @item{@DFlag{format} — Format all files using @tt{raco fmt}}
   @item{@DFlag{no-config} — Ignore @tt{.racket-linter.rkt} config file}
+  @item{@DFlag{config} @tt{<file>} — Specify custom config file path}
+  @item{@DFlag{exclude} @tt{<dir>} — Exclude directory from analysis (can be repeated)}
+  @item{@DFlag{parallel} — Enable parallel file processing}
+  @item{@DFlag{output} @tt{<format>} — Output format: text, json, sarif, junit (default: text)}
 ]
 
 @section{Configuration}
@@ -147,7 +152,23 @@ Supported auto-fix rules:
   @item{@bold{style/require-sort} — sorts require arguments alphabetically}
   @item{@bold{style/provide-sort} — sorts provide arguments alphabetically}
   @item{@bold{style/simplify-cond} — replaces @tt{#t} with @tt{else} in cond forms}
+  @item{@bold{style/extract-let} — extracts repeated expressions to define bindings}
 ]
+
+@section{Output Formats}
+
+The linter supports multiple output formats for CI/CD integration:
+
+@verbatim|{
+# JSON output
+raco lint --output json <directory>
+
+# SARIF output (GitHub Code Scanning)
+raco lint --output sarif <directory>
+
+# JUnit XML output
+raco lint --output junit <directory>
+}|
 
 @section{Safe Language Whitelist}
 
@@ -210,6 +231,14 @@ Files with these @tt{#lang} declarations are parsed with @racket[read-syntax] fo
   Analyzes a file using DrRacket's check-syntax API for precise unused variable/require detection.
 }
 
+@subsection{Abstract Interpretation}
+
+@defproc[(analyze-abstract [stx syntax?]
+                           [path path-string?])
+         (listof diagnostic?)]{
+  Analyzes expanded syntax using abstract interpretation to detect type errors and unreachable code.
+}
+
 @section{Examples}
 
 @subsection{Basic Usage}
@@ -223,6 +252,15 @@ raco lint --fix /path/to/project
 
 # Format and check
 raco lint --format /path/to/project
+
+# Parallel processing
+raco lint --parallel /path/to/project
+
+# JSON output for CI
+raco lint --output json /path/to/project
+
+# Exclude test directory
+raco lint --exclude tests /path/to/project
 }|
 
 @subsection{Configuration File}
@@ -267,6 +305,7 @@ raco lint --format /path/to/project
   @item{@bold{eval} in @tt{.racket-linter.rkt} loading is a security risk for untrusted projects.}
   @item{@bold{Cross-module rules} need a separate dispatch mechanism beyond @racket[run-file].}
   @item{@bold{check-syntax integration} uses @racket[show-content] which may not capture all diagnostics.}
+  @item{@bold{extract-let auto-fix} is simplified — inserts defines at module level, not optimal let bindings.}
 ]
 
 @section{License}

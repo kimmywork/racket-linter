@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [master, main]
+    tags: ['v*']
   pull_request:
     branches: [master, main]
 
@@ -23,7 +24,7 @@ jobs:
           version: ${{ matrix.racket-version }}
 
       - name: Install package
-        run: raco pkg install --auto --link .
+        run: raco pkg install --auto .
 
       - name: Run tests
         run: raco test .
@@ -51,6 +52,9 @@ jobs:
           distribution: full
           version: '9.2'
 
+      - name: Install package
+        run: raco pkg install --auto .
+
       - name: Install fmt
         run: raco pkg install --auto fmt
 
@@ -59,3 +63,57 @@ jobs:
           find . -name '*.rkt' -not -path './tests/*' | while read f; do
             raco fmt --check "$f" || echo "Format check failed: $f"
           done
+
+  docs:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Racket
+        uses: Bogdanp/setup-racket@v1.12
+        with:
+          architecture: x64
+          distribution: full
+          version: '9.2'
+
+      - name: Install package
+        run: raco pkg install --auto .
+
+      - name: Build documentation
+        run: raco setup --doc-index racket-linter
+
+      - name: Prepare site
+        run: |
+          mkdir -p _site
+          # raco setup puts docs in ~/Racket/9.2/doc or similar
+          DOC_DIR=$(find ~/Library/Racket ~/Racket ~/.local/share/racket -path '*/doc/racket-linter' -type d 2>/dev/null | head -1)
+          if [ -n "$DOC_DIR" ]; then
+            cp -r "$DOC_DIR"/* _site/
+          else
+            echo "Documentation directory not found, building locally..."
+            raco scribble ++xref-in --redirect-main http://docs.racket-lang.org/ scribblings/racket-linter.scrbl
+            cp -r doc/racket-linter/* _site/ 2>/dev/null || echo "No docs generated"
+          fi
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
