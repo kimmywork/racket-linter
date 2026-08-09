@@ -101,6 +101,12 @@ Rules not mentioned in the config use their built-in defaults. User config alway
 | `abstract/type-error` | expand | Detects type errors via abstract interpretation |
 | `abstract/unreachable-code` | text | Detects code after exit/raise that may be unreachable |
 
+### Check-Syntax Rules (disabled by default)
+
+| Rule ID | Layer | Description |
+|---------|-------|-------------|
+| `check-syntax/unused` | syntax | Uses DrRacket's check-syntax API for precise unused variable/require detection |
+
 ### Project-Level Rules
 
 | Rule ID | Description |
@@ -144,6 +150,9 @@ Rules with auto-fix support:
 
 - `style/trailing-whitespace` — removes trailing whitespace
 - `style/newline-at-eof` — adds missing newline at end of file
+- `style/require-sort` — sorts require arguments alphabetically
+- `style/provide-sort` — sorts provide arguments alphabetically
+- `style/simplify-cond` — replaces `#t` with `else` in cond forms
 
 ## Formatter Integration
 

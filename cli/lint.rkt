@@ -82,6 +82,12 @@
           (string-append indent (regexp-replace* #px"#t" trimmed "else")))
         line)))
 
+;; Note: extract-let auto-fix is not implemented yet
+;; It would require scope analysis to properly extract expressions
+(define (fix-extract-let lines)
+  ;; No-op for now - just return lines unchanged
+  lines)
+
 (define (apply-fixes path diagnostics)
   (define text (call-with-input-file path port->string))
   (define lines (string-split text "\n" #:trim? #f))
