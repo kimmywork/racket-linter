@@ -7,6 +7,6 @@
 (define scribblings '(("scribblings/racket-linter.scrbl" ())))
 (define pkg-desc "A configurable, extensible Racket linter with style, reachability, and abstract interpretation rules")
 (define pkg-authors '(kimmy))
-(define pkg-license 'MIT)
+(define license 'MIT)
 (define raco-commands
   '(("lint" racket-linter/cli/lint "Lint Racket files" 1)))
