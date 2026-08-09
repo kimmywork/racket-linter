@@ -45,17 +45,49 @@
       lines
       (append lines (list ""))))
 
+(define (fix-require-sort lines)
+  (for/list ([line (in-list lines)])
+    (define trimmed (string-trim line))
+    (if (regexp-match? #px"^\\(require\\s+" trimmed)
+        ;; Sort require arguments
+        (let* ([args-str (regexp-replace #px"^\\(require\\s+" trimmed "")]
+               [args-str (regexp-replace #px"\\)\\s*$" args-str "")]
+               [args (string-split args-str)]
+               [sorted-args (sort args string<?)]
+               [indent (make-string (string-length (car (regexp-match #px"^\\s*" line))) #\space)])
+          (string-append indent "(require " (string-join sorted-args " ") ")"))
+        line)))
+
+(define (fix-provide-sort lines)
+  (for/list ([line (in-list lines)])
+    (define trimmed (string-trim line))
+    (if (regexp-match? #px"^\\(provide\\s+" trimmed)
+        ;; Sort provide arguments
+        (let* ([args-str (regexp-replace #px"^\\(provide\\s+" trimmed "")]
+               [args-str (regexp-replace #px"\\)\\s*$" args-str "")]
+               [args (string-split args-str)]
+               [sorted-args (sort args string<?)]
+               [indent (make-string (string-length (car (regexp-match #px"^\\s*" line))) #\space)])
+          (string-append indent "(provide " (string-join sorted-args " ") ")"))
+        line)))
+
 (define (apply-fixes path diagnostics)
   (define text (call-with-input-file path port->string))
   (define lines (string-split text "\n" #:trim? #f))
   (define has-trailing? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/trailing-whitespace)) diagnostics))
   (define has-no-eof-newline? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/newline-at-eof)) diagnostics))
+  (define has-require-sort? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/require-sort)) diagnostics))
+  (define has-provide-sort? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/provide-sort)) diagnostics))
   (define fixed-lines
     (let ([l lines])
       (when has-trailing?
         (set! l (fix-trailing-whitespace l)))
       (when has-no-eof-newline?
         (set! l (fix-newline-at-eof l)))
+      (when has-require-sort?
+        (set! l (fix-require-sort l)))
+      (when has-provide-sort?
+        (set! l (fix-provide-sort l)))
       l))
   (define fixed-text (string-join fixed-lines "\n"))
   (unless (string=? text fixed-text)
