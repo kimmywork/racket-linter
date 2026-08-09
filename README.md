@@ -153,6 +153,7 @@ Rules with auto-fix support:
 - `style/require-sort` — sorts require arguments alphabetically
 - `style/provide-sort` — sorts provide arguments alphabetically
 - `style/simplify-cond` — replaces `#t` with `else` in cond forms
+- `style/extract-let` — extracts repeated expressions to define bindings
 
 ## Formatter Integration
 
