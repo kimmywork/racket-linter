@@ -9,4 +9,4 @@
 (define pkg-authors '(kimmy))
 (define pkg-license 'MIT)
 (define raco-commands
-  '(("lint" "cli/lint" "Lint Racket files" 1)))
+  '(("lint" racket-linter/cli/lint "Lint Racket files" 1)))

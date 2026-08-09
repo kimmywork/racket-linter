@@ -74,14 +74,13 @@ jobs:
       - name: Prepare site
         run: |
           mkdir -p _site
-          # raco setup puts docs in ~/Racket/9.2/doc or similar
+          # raco setup puts docs in ~/Racket/9.2/doc or similar (Linux: ~/.local/share/racket)
           DOC_DIR=$(find ~/Library/Racket ~/Racket ~/.local/share/racket -path '*/doc/racket-linter' -type d 2>/dev/null | head -1)
           if [ -n "$DOC_DIR" ]; then
             cp -r "$DOC_DIR"/* _site/
           else
-            echo "Documentation directory not found, building locally..."
-            raco scribble ++xref-in --redirect-main http://docs.racket-lang.org/ scribblings/racket-linter.scrbl
-            cp -r doc/racket-linter/* _site/ 2>/dev/null || echo "No docs generated"
+            echo "Documentation directory not found, building with scribble..."
+            raco scribble --html --dest _site scribblings/racket-linter.scrbl
           fi
 
       - name: Setup Pages
