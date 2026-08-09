@@ -17,12 +17,14 @@
 (provide run)
 (module+ main (run (vector->list (current-command-line-arguments))))
 (define (usage)
-  (displayln "Usage: raco lint [--fix] [--format] [--no-config] <directory>")
+  (displayln "Usage: raco lint [options] <directory>")
   (displayln "")
   (displayln "Options:")
-  (displayln "  --fix        Auto-fix trailing whitespace and missing EOF newline")
-  (displayln "  --format     Format all files using raco fmt (requires fmt package)")
-  (displayln "  --no-config  Ignore .racket-linter.rkt config file")
+  (displayln "  --fix              Auto-fix trailing whitespace and missing EOF newline")
+  (displayln "  --format           Format all files using raco fmt (requires fmt package)")
+  (displayln "  --no-config        Ignore .racket-linter.rkt config file")
+  (displayln "  --config <file>    Specify custom config file path")
+  (displayln "  --exclude <dir>    Exclude directory from analysis (can be repeated)")
   (exit 1))
 (define (find-rkt-files dir)
   (for/list ([f (in-directory dir)]
@@ -141,23 +143,45 @@
   (define fix? #f)
   (define format? #f)
   (define no-config? #f)
+  (define config-file #f)
+  (define exclude-dirs '())
   (define dir #f)
-  (for ([arg (in-list args)])
-    (cond
-      [(string=? arg "--fix") (set! fix? #t)]
-      [(string=? arg "--format") (set! format? #t)]
-      [(string=? arg "--no-config") (set! no-config? #t)]
-      [(not (string-prefix? arg "--")) (set! dir arg)]
-      [else (eprintf "Unknown option: ~a\n" arg) (usage)]))
-  (values fix? format? no-config? dir))
+  (let loop ([remaining args])
+    (unless (null? remaining)
+      (define arg (car remaining))
+      (cond
+        [(string=? arg "--fix") (set! fix? #t) (loop (cdr remaining))]
+        [(string=? arg "--format") (set! format? #t) (loop (cdr remaining))]
+        [(string=? arg "--no-config") (set! no-config? #t) (loop (cdr remaining))]
+        [(string=? arg "--config")
+         (when (null? (cdr remaining))
+           (eprintf "Error: --config requires a file path\n" )
+           (usage))
+         (set! config-file (cadr remaining))
+         (loop (cddr remaining))]
+        [(string=? arg "--exclude")
+         (when (null? (cdr remaining))
+           (eprintf "Error: --exclude requires a directory name\n")
+           (usage))
+         (set! exclude-dirs (cons (cadr remaining) exclude-dirs))
+         (loop (cddr remaining))]
+        [(not (string-prefix? arg "--")) (set! dir arg) (loop (cdr remaining))]
+        [else (eprintf "Unknown option: ~a\n" arg) (usage)])))
+  (values fix? format? no-config? config-file exclude-dirs dir))
 
 (define (run args)
-  (define-values (fix? format? no-config? dir) (parse-args args))
+  (define-values (fix? format? no-config? config-file exclude-dirs dir) (parse-args args))
   (unless dir (usage))
   (unless (directory-exists? dir)
     (eprintf "Error: ~a is not a directory\n" dir)
     (exit 1))
-  (define files (find-rkt-files dir))
+  (define files
+    (let ([all-files (find-rkt-files dir)])
+      (if (null? exclude-dirs)
+          all-files
+          (filter (lambda (f)
+                    (not (ormap (lambda (exc) (string-contains? f exc)) exclude-dirs)))
+                  all-files))))
   (define all-rules
     (list style/line-length style/trailing-whitespace style/newline-at-eof
           style/sexpr-depth style/definition-length style/file-length
@@ -168,7 +192,10 @@
           export/unused module/require-provide
           abstract/type-error abstract/unreachable-code
           check-syntax/unused))
-  (define user-config-file (build-path dir ".racket-linter.rkt"))
+  (define user-config-file
+    (if config-file
+        (string->path config-file)
+        (build-path dir ".racket-linter.rkt")))
   (define user-config
     (if (and (not no-config?) (file-exists? user-config-file))
         (with-handlers ([exn? (lambda (e) (hash))])
