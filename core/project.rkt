@@ -112,6 +112,12 @@
 
 ;; Find exports that are not used anywhere in the project
 (define (find-unused-exports graph)
+  ;; Common public API names that should not be flagged
+  (define public-api-names
+    (list "run" "main" "start" "stop" "init" "reset"
+          "provide" "require" "module" "module+"
+          "info" "version" "help"))
+  
   (define all-exports (make-hash)) ; path -> set of exported names
   (define all-imports (make-hash)) ; path -> set of imported names
   
@@ -128,15 +134,17 @@
   (for ([(path exports) (in-hash all-exports)])
     (when (not (set-member? exports 'all-defined-out))
       (for ([export (in-set exports)])
-        (define used?
-          (for/or ([other-path (in-hash-keys graph)]
-                   #:when (not (string=? other-path path)))
-            (define imports (hash-ref all-imports other-path (set)))
-            ;; Simplified: check if the module path is imported
-            ;; A full implementation would check if the specific export is used
-            (set-member? imports path)))
-        (when (not used?)
-          (set! unused (cons (list path export) unused))))))
+        ;; Skip public API names
+        (when (not (member export public-api-names))
+          (define used?
+            (for/or ([other-path (in-hash-keys graph)]
+                     #:when (not (string=? other-path path)))
+              (define imports (hash-ref all-imports other-path (set)))
+              ;; Simplified: check if the module path is imported
+              ;; A full implementation would check if the specific export is used
+              (set-member? imports path)))
+          (when (not used?)
+            (set! unused (cons (list path export) unused)))))))
   
   unused)
 
