@@ -12,6 +12,7 @@
          "../rules/export/unused.rkt"
          "../rules/module/require-provide.rkt"
          "../rules/abstract/type-error.rkt" "../rules/abstract/unreachable-code.rkt"
+         "../rules/check-syntax/unused.rkt"
          (for-syntax racket/base))
 (provide run)
 (module+ main (run (vector->list (current-command-line-arguments))))
@@ -159,7 +160,8 @@
           definition/unused reachability/undefined reachability/unused-require
           reachability/unused-require-expand
           export/unused module/require-provide
-          abstract/type-error abstract/unreachable-code))
+          abstract/type-error abstract/unreachable-code
+          check-syntax/unused))
   (define user-config-file (build-path dir ".racket-linter.rkt"))
   (define user-config
     (if (and (not no-config?) (file-exists? user-config-file))
