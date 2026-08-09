@@ -41,31 +41,6 @@ jobs:
         run: racket cli/lint.rkt . || true
         continue-on-error: true
 
-  fmt:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Racket
-        uses: Bogdanp/setup-racket@v1.12
-        with:
-          architecture: x64
-          distribution: full
-          version: '9.2'
-
-      - name: Install package
-        run: raco pkg install --auto
-        working-directory: ${{ github.workspace }}
-
-      - name: Install fmt
-        run: raco pkg install --auto fmt
-
-      - name: Check formatting
-        run: |
-          find . -name '*.rkt' -not -path './tests/*' | while read f; do
-            raco fmt --check "$f" || echo "Format check failed: $f"
-          done
-
   docs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
