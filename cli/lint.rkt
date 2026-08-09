@@ -86,11 +86,49 @@
           (string-append indent (regexp-replace* #px"#t" trimmed "else")))
         line)))
 
-;; Note: extract-let auto-fix is not implemented yet
-;; It would require scope analysis to properly extract expressions
+;; Extract-let auto-fix: replace repeated expressions with let bindings
 (define (fix-extract-let lines)
-  ;; No-op for now - just return lines unchanged
-  lines)
+  (define expressions (make-hash))
+  ;; Find all expressions in parentheses
+  (for ([line (in-list lines)] [ln (in-naturals 1)])
+    (define trimmed (string-trim line))
+    (define exprs (regexp-match* #px"\\([^()]+\\)" trimmed))
+    (for ([expr (in-list exprs)])
+      (define normalized (string-trim expr))
+      (when (> (string-length normalized) 5)
+        (hash-update! expressions normalized
+                      (lambda (old) (cons ln old))
+                      '()))))
+  ;; Find expressions that appear more than once
+  (define repeated '())
+  (for ([(expr locations) (in-hash expressions)])
+    (when (>= (length locations) 2)
+      (set! repeated (cons expr repeated))))
+  ;; Apply fixes for repeated expressions
+  (if (null? repeated)
+      lines
+      (let ([result lines] [counter 1])
+        ;; Find the #lang line position
+        (define lang-line-idx
+          (for/first ([i (in-naturals)] [line (in-list lines)]
+                      #:when (regexp-match? #px"^#lang" (string-trim line)))
+            i))
+        (for ([expr (in-list repeated)])
+          (define var-name (format "_repeated~a" counter))
+          (define let-line (format "(define ~a ~a)" var-name expr))
+          ;; Replace all occurrences
+          (set! result
+                (map (lambda (line)
+                       (regexp-replace* (regexp-quote expr) line var-name))
+                     result))
+          ;; Insert let binding after #lang line (or at beginning if no #lang)
+          (if lang-line-idx
+              (let ([before (take result (+ lang-line-idx 1))]
+                    [after (drop result (+ lang-line-idx 1))])
+                (set! result (append before (list let-line) after)))
+              (set! result (cons let-line result)))
+          (set! counter (+ counter 1)))
+        result)))
 
 (define (apply-fixes path diagnostics)
   (define text (call-with-input-file path port->string))
@@ -100,6 +138,7 @@
   (define has-require-sort? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/require-sort)) diagnostics))
   (define has-provide-sort? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/provide-sort)) diagnostics))
   (define has-simplify-cond? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/simplify-cond)) diagnostics))
+  (define has-extract-let? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/extract-let)) diagnostics))
   (define fixed-lines
     (let ([l lines])
       (when has-trailing?
@@ -112,6 +151,8 @@
         (set! l (fix-provide-sort l)))
       (when has-simplify-cond?
         (set! l (fix-simplify-cond l)))
+      (when has-extract-let?
+        (set! l (fix-extract-let l)))
       l))
   (define fixed-text (string-join fixed-lines "\n"))
   (unless (string=? text fixed-text)
