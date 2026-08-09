@@ -65,6 +65,8 @@ Rules not mentioned in the config use their built-in defaults. User config alway
 | `style/naming-convention` | text | Detects underscores and camelCase (should use hyphens) |
 | `style/require-sort` | text | Require arguments not sorted alphabetically |
 | `style/provide-sort` | text | Provide arguments not sorted alphabetically |
+| `style/extract-let` | text | Detects repeated expressions that could be extracted to let |
+| `style/simplify-cond` | text | Detects cond expressions that could be simplified |
 
 ### Definition Rules (disabled by default)
 
