@@ -119,15 +119,21 @@
           "info" "version" "help"))
   
   (define all-exports (make-hash)) ; path -> set of exported names
-  (define all-imports (make-hash)) ; path -> set of imported names
+  (define all-imports (make-hash)) ; path -> set of (module-path, name) pairs
   
   ;; Collect all exports
   (for ([(path mod) (in-hash graph)])
     (hash-set! all-exports path (list->set (module-info-provides mod))))
   
-  ;; Collect all imports (simplified: just track which modules are required)
+  ;; Collect all imports with specific names
   (for ([(path mod) (in-hash graph)])
-    (hash-set! all-imports path (list->set (module-info-requires mod))))
+    (define imports (make-hash)) ; module-path -> set of imported names
+    (for ([req (in-list (module-info-requires mod))])
+      ;; Parse require form to extract specific names
+      (define names (parse-require-names req))
+      (when (not (null? names))
+        (hash-update! imports req (lambda (old) (set-union old (list->set names))) (set))))
+    (hash-set! all-imports path imports))
   
   ;; Find exports that are not imported by any other module
   (define unused '())
@@ -139,14 +145,34 @@
           (define used?
             (for/or ([other-path (in-hash-keys graph)]
                      #:when (not (string=? other-path path)))
-              (define imports (hash-ref all-imports other-path (set)))
-              ;; Simplified: check if the module path is imported
-              ;; A full implementation would check if the specific export is used
-              (set-member? imports path)))
+              (define imports (hash-ref all-imports other-path (hash)))
+              ;; Check if the module is imported AND the specific export is used
+              (for/or ([(mod-path names) (in-hash imports)])
+                (and (set-member? names export) #t))))
           (when (not used?)
             (set! unused (cons (list path export) unused)))))))
   
   unused)
+
+;; Parse require form to extract specific imported names
+(define (parse-require-names require-str)
+  ;; Handle (only-in mod name ...) and (rename-in mod [old new] ...)
+  (cond
+    ((regexp-match? #px"^\\(only-in\\s+" require-str)
+     ;; Extract names from (only-in mod name ...)
+     (define parts (string-split (regexp-replace #px"^\\(only-in\\s+" require-str "")))
+     (if (>= (length parts) 2)
+         (cdr parts) ; Skip module path
+         '()))
+    ((regexp-match? #px"^\\(rename-in\\s+" require-str)
+     ;; Extract names from (rename-in mod [old new] ...)
+     (define parts (string-split (regexp-replace #px"^\\(rename-in\\s+" require-str "")))
+     (if (>= (length parts) 2)
+         (filter (lambda (p) (not (string=? p "["))) (cdr parts))
+         '()))
+    (else
+     ;; Simple module path - no specific names
+     '())))
 
 ;; Main analysis function
 (define (analyze-project files)
