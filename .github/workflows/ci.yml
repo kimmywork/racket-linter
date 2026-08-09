@@ -74,7 +74,7 @@ jobs:
       - name: Build documentation
         run: |
           mkdir -p _site
-          raco scribble ++main-xref-in --html --dest _site scribblings/racket-linter.scrbl
+          raco scribble ++main-xref-in --redirect-main http://docs.racket-lang.org/ --html --dest _site scribblings/racket-linter.scrbl
           cp _site/racket-linter.html _site/index.html
 
       - name: Setup Pages
