@@ -1,6 +1,6 @@
 #lang racket/base
 (require racket/string racket/path racket/list racket/contract/base racket/function racket/dict racket/port racket/system
-         "../core/diagnostic.rkt" "../core/rule.rkt" "../core/engine.rkt"
+         "../core/diagnostic.rkt" "../core/rule.rkt" "../core/engine.rkt" "../core/project.rkt"
          "../rules/style/line-length.rkt" "../rules/style/trailing-whitespace.rkt"
          "../rules/style/newline-at-eof.rkt" "../rules/style/sexpr-depth.rkt"
          "../rules/style/definition-length.rkt" "../rules/style/file-length.rkt"
@@ -125,12 +125,15 @@
       (format-file f)))
   (define diagnostics
     (apply append (map (lambda (f) (run-file all-rules merged-config f)) files)))
+  ;; Project-level analysis
+  (define project-diagnostics (analyze-project files))
+  (define all-diagnostics (append diagnostics project-diagnostics))
   (when fix?
     ;; Group diagnostics by file
     (define by-file (make-hash))
-    (for ([d (in-list diagnostics)])
+    (for ([d (in-list all-diagnostics)])
       (hash-update! by-file (diagnostic-path d) (lambda (old) (cons d old)) '()))
     (for ([(path diags) (in-hash by-file)])
       (apply-fixes path diags)))
-  (print-diagnostics diagnostics)
-  (exit (if (null? diagnostics) 0 1)))
+  (print-diagnostics all-diagnostics)
+  (exit (if (null? all-diagnostics) 0 1)))
