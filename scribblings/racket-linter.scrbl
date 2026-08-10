@@ -122,6 +122,9 @@ are available but opt-in.
   (list "review/module-declaration" "text" "disabled" "Reports a missing #lang module declaration")
   (list "review/raco-review" "text" "disabled" "Optional bridge to the installed raco-review rule implementation")
   (list "module/circular-dependency" "project" "enabled" "Reports cycles in the simplified require graph")
+  (list "module/phase-parse" "project" "disabled" "Reports source/module graph parse failures")
+  (list "module/phase-unresolved-require" "project" "disabled" "Reports unresolved relative requires with phase")
+  (list "module/phase-cycle" "project" "disabled" "Reports phase-aware dependency cycles")
   (list "export/unused-project" "project" "disabled" "Reports exports unused by files in this project"))]
 
 The project-level export rule cannot know about consumers outside the scanned
@@ -198,6 +201,7 @@ The public core modules provide these values:
  @item{@tt{merge-configs} for recursive default/user configuration merging.}
  @item{@tt{analyze-project}, @tt{build-dependency-graph}, and project diagnostics.}
  @item{@tt{check-syntax-facts} returns definitions, lexical references, unused binder/require spans, and analysis errors.}
+ @item{@tt{parse-module-facts}, @tt{build-phase-module-graph}, and @tt{check-phase-module-graph} for phase-aware module facts and diagnostics.}
  @item{@tt{analyze-abstract} for conservative expanded-syntax analysis.}
 ]
 

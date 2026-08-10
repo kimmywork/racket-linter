@@ -19,7 +19,7 @@ raco setup --pkgs racket-linter
 raco lint .
 ```
 
-The current test suite has 320 passing tests. Re-run setup after changing
+The current test suite has 325 passing tests. Re-run setup after changing
 `info.rkt` or the registered `raco lint` command:
 
 ```sh
@@ -83,7 +83,9 @@ structured diagnostic pipeline.
 - expansion is restricted to a safe-language whitelist;
 - abstract evaluation is a conservative value-flow analysis, not a type system;
 - `abstract/unreachable-code` is a text heuristic, not a proof;
-- require/provide analysis is local or based on a simplified project graph;
+- project/module analysis is local or based on a simplified project graph;
+- the opt-in phase-aware module graph records `require` phase, source location,
+  relative resolution, unresolved edges, and phase-keyed cycles;
 - rule exceptions become `linter/internal-error` diagnostics instead of being
   silently treated as a clean result;
 - syntax-aware review compatibility checks for binding/form shape, and an

@@ -3,6 +3,7 @@
          raco/command-name
          racket/string racket/path racket/list racket/contract/base racket/function racket/dict racket/port racket/system
          "../core/diagnostic.rkt" "../core/rule.rkt" "../core/engine.rkt" "../core/project.rkt"
+         "../core/module-graph.rkt"
          "../rules/style/line-length.rkt" "../rules/style/trailing-whitespace.rkt"
          "../rules/style/newline-at-eof.rkt" "../rules/style/sexpr-depth.rkt"
          "../rules/style/definition-length.rkt" "../rules/style/file-length.rkt"
@@ -277,7 +278,10 @@
         (hash)))
   (define default-project-config
     (hash 'module/circular-dependency (hash 'enabled #t)
-          'export/unused-project (hash 'enabled #f)))
+          'export/unused-project (hash 'enabled #f)
+          'module/phase-parse (hash 'enabled #f)
+          'module/phase-unresolved-require (hash 'enabled #f)
+          'module/phase-cycle (hash 'enabled #f)))
   (define merged-config
     (merge-configs default-project-config user-config))
   ;; Format files if requested
@@ -321,7 +325,8 @@
         (hash-ref merged-config (diagnostic-rule-id diagnostic) (hash))
         'enabled
         #t))
-     (analyze-project files)))
+     (append (analyze-project files)
+             (check-phase-module-graph files))))
   (define all-diagnostics (append diagnostics project-diagnostics))
   (when fix?
     ;; Group diagnostics by file
