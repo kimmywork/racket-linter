@@ -111,8 +111,8 @@
   (check-equal? (length (run-rule-on style/provide-sort "(define x 1)\n")) 0))
 
 ;; simplify-cond
-(test-case "simplify-cond: detects #t instead of else"
-  (check-equal? (length (run-rule-on style/simplify-cond "  [#t (displayln x)]\n")) 1))
+(test-case "simplify-cond: standalone data is not treated as a cond clause"
+  (check-equal? (length (run-rule-on style/simplify-cond "  [#t (displayln x)]\n")) 0))
 
 (test-case "simplify-cond: accepts else"
   (check-equal? (length (run-rule-on style/simplify-cond "  [else (displayln x)]\n")) 0))
@@ -120,7 +120,13 @@
 (test-case "simplify-cond: cond with #t on same line"
   (check-true (>= (length (run-rule-on style/simplify-cond "(cond [#t 1])\n")) 1)))
 
-;; definition-length
+(test-case "simplify-cond: detects multiline final #t clause"
+  (check-true
+   (>= (length (run-rule-on style/simplify-cond
+                            "(cond\n  [(zero? x) 0]\n  [#t 1])\n"))
+       1)))
+
+
 (test-case "definition-length: detects long definitions"
   (define lines (append (list "#lang racket/base\n" "(define (f)\n")
                         (for/list ([i 70]) (format "  (displayln ~a)\n" i))

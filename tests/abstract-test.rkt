@@ -92,6 +92,52 @@
 (test-case "abstract: cdr on list"
   (check-true (list? (run-abstract "#lang racket/base\n(define x (list 1 2))\n(cdr x)\n"))))
 
+(test-case "abstract: numeric operation rejects definite string"
+  (define diags
+    (run-abstract "#lang racket/base\n(+ 1 \"bad\")\n"))
+  (check-equal? (length (type-errors diags)) 1)
+  (check-true (string-contains?
+               (diagnostic-message (car (type-errors diags)))
+               "numeric arguments")))
+
+(test-case "abstract: car rejects definite number"
+  (define diags
+    (run-abstract "#lang racket/base\n(car 1)\n"))
+  (check-equal? (length (type-errors diags)) 1)
+  (check-true (string-contains?
+               (diagnostic-message (car (type-errors diags)))
+               "pair or list")))
+
+(test-case "abstract: known false branch is not analyzed"
+  (define diags
+    (run-abstract "#lang racket/base\n(if #f (car 1) 42)\n"))
+  (check-equal? (length (type-errors diags)) 0))
+
+(test-case "abstract: lexical shadowing keeps bindings distinct"
+  (define diags
+    (run-abstract
+     "#lang racket/base\n(define x 1)\n(let ([x (lambda (v) v)]) (x 2))\n"))
+  (check-equal? (length (type-errors diags)) 0))
+
+(test-case "abstract: closure captures a numeric binding"
+  (define diags
+    (run-abstract
+     "#lang racket/base\n(define (make-adder x) (lambda (y) (+ x y)))\n((make-adder 2) 3)\n"))
+  (check-equal? (length (type-errors diags)) 0))
+
+(test-case "abstract: vector operations preserve element information"
+  (define diags
+    (run-abstract
+     "#lang racket/base\n(define xs (vector 1 2))\n(+ (vector-ref xs 0) 3)\n"))
+  (check-equal? (length (type-errors diags)) 0))
+
+(test-case "abstract: diagnostics use application source location"
+  (define diags
+    (run-abstract "#lang racket/base\n\n(car 1)\n"))
+  (define d (car (type-errors diags)))
+  (check-equal? (diagnostic-line d) 3)
+  (check-equal? (diagnostic-col d) 0))
+
 ;; ============================================================
 ;; Control flow
 ;; ============================================================

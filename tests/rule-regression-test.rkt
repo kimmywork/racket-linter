@@ -10,7 +10,10 @@
          "../rules/export/unused.rkt"
          "../rules/reachability/unused-require.rkt"
          "../rules/module/require-provide.rkt"
-         "../rules/abstract/unreachable-code.rkt")
+         "../rules/abstract/unreachable-code.rkt"
+         "../rules/review/syntax-quality.rkt"
+         "../rules/review/module-declaration.rkt"
+         "../rules/review/raco-review.rkt")
 
 (define (run-enabled rule content)
   (define f (make-temp-rkt content))
@@ -56,6 +59,56 @@
                  "#lang racket/base\n(provide missing)\n"))
   (check-equal? (length diagnostics) 1)
   (check-equal? (diagnostic-severity (first diagnostics)) 'warning))
+
+
+(test-case "review syntax quality detects duplicate binding and missing cond else"
+  (define diagnostics
+    (run-enabled review/syntax-quality
+                 "#lang racket/base\n(define x 1)\n(define x 2)\n(cond [#t 1])\n"))
+  (check-true (ormap (lambda (d) (eq? (diagnostic-rule-id d) 'review/already-defined))
+                     diagnostics))
+  (check-true (ormap (lambda (d) (eq? (diagnostic-rule-id d) 'review/cond-shape))
+                     diagnostics)))
+
+(test-case "review syntax quality detects control and match shapes"
+  (define diagnostics
+    (run-enabled review/syntax-quality
+                 "#lang racket/base\n(if #t 1)\n(match 1 [else 2] [null 3])\n"))
+  (check-true (ormap (lambda (d) (eq? (diagnostic-rule-id d) 'review/if-arity))
+                     diagnostics))
+  (check-equal?
+   (length (filter (lambda (d) (eq? (diagnostic-rule-id d) 'review/match-shape))
+                   diagnostics))
+   2))
+
+
+(test-case "review module declaration distinguishes modules from snippets"
+  (check-equal?
+   (length (run-enabled review/module-declaration
+                        "#lang racket/base\n(define x 1)\n"))
+   0)
+  (define diagnostics
+    (run-enabled review/module-declaration "(define x 1)\n"))
+  (check-equal? (length diagnostics) 1)
+  (check-equal? (diagnostic-rule-id (first diagnostics))
+                'review/module-declaration))
+
+(test-case "review syntax quality uses syntax paren shape"
+  (define diagnostics
+    (run-enabled review/syntax-quality
+                 "#lang racket/base\n(let ((x 1)) x)\n"))
+  (check-true (ormap (lambda (d) (eq? (diagnostic-rule-id d) 'review/bracket-shape))
+                     diagnostics)))
+
+
+(test-case "raco-review compatibility backend translates review findings"
+  (define diagnostics
+    (run-enabled review/raco-review
+                 "#lang racket/base\n(if #t 1)\n"))
+  (check-true (ormap (lambda (d)
+                       (string-contains? (diagnostic-message d) "if expressions"))
+                     diagnostics))
+  (check-true (andmap diagnostic? diagnostics)))
 
 (test-case "abstract/unreachable-code reports code after raise"
   (define diagnostics

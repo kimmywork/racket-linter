@@ -18,7 +18,10 @@
   (call-with-output-file temp-file
     (lambda (out) (display content out))
     #:exists 'replace)
-  (define diags ((rule-check rule) #f (path->string temp-file) (hash)))
+  (define diags
+    (run-file (list rule)
+              (hash (rule-id rule) (hash 'enabled #t))
+              (path->string temp-file)))
   (delete-file temp-file)
   diags)
 

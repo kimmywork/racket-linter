@@ -12,8 +12,35 @@
   (display-to-file content f #:exists 'replace)
   f)
 
-;; ============================================================
-;; check-syntax-analyze
+(test-case "check-syntax: facts retain definitions and references"
+  (define f (make-temp "#lang racket/base\n(define x 1)\n(displayln x)\n"))
+  (define facts (check-syntax-facts (path->string f)))
+  (check-equal? (length (syntax-facts-errors facts)) 0)
+  (check-true (pair? (syntax-facts-definitions facts)))
+  (check-true (pair? (syntax-facts-references facts)))
+  (check-equal? (length (syntax-facts-unused-binders facts)) 0)
+  (delete-file f))
+
+(test-case "check-syntax: unused span maps to source line"
+  (define f (make-temp "#lang racket/base\n(define unused 1)\n(displayln 2)\n"))
+  (define facts (check-syntax-facts (path->string f)))
+  (define span (car (syntax-facts-unused-binders facts)))
+  (check-equal? (syntax-span-start span) 26)
+  (define diags (check-syntax-analyze (path->string f)))
+  (define unused (car diags))
+  (check-equal? (diagnostic-line unused) 2)
+  (check-equal? (diagnostic-col unused) 8)
+  (delete-file f))
+
+(test-case "check-syntax: unused require has a source span"
+  (define f (make-temp "#lang racket/base\n(require racket/string)\n(displayln 1)\n"))
+  (define facts (check-syntax-facts (path->string f)))
+  (check-equal? (length (syntax-facts-unused-requires facts)) 1)
+  (define span (car (syntax-facts-unused-requires facts)))
+  (check-true (<= 0 (syntax-span-start span)))
+  (delete-file f))
+
+
 ;; ============================================================
 
 (test-case "check-syntax: returns list"

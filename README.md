@@ -19,7 +19,7 @@ raco setup --pkgs racket-linter
 raco lint .
 ```
 
-The current test suite has 286 passing tests. Re-run setup after changing
+The current test suite has 320 passing tests. Re-run setup after changing
 `info.rkt` or the registered `raco lint` command:
 
 ```sh
@@ -62,20 +62,32 @@ sandboxing.
 
 Reliable, low-cost file rules are enabled by default. The undefined-identifier
 scanner, sexpr-depth heuristic, definition/unused heuristic, unused-binding
-rules, export checks, and abstract analysis are opt-in where their current
-binding or semantic precision is limited. Circular-dependency analysis remains
-enabled by default. Project-level unused-export analysis is disabled by
-default because a library's external consumers are outside the scanned tree.
+rules, export checks, abstract analysis, syntax-aware review compatibility, and
+the optional `raco review` bridge are opt-in where their current binding or
+semantic precision is limited. Circular-dependency analysis remains enabled by
+default. Project-level unused-export analysis is disabled by default because a
+library's external consumers are outside the scanned tree.
+
+The syntax-aware review layer covers stable `raco review` shape checks directly;
+`review/raco-review` can be enabled when the `review` package is installed to
+run the package's complete version-specific rule set through the same
+structured diagnostic pipeline.
 
 ## Analysis Boundaries
 
 - syntax analysis now reads all top-level forms in a file;
+- syntax-aware rules preserve source locations and paren shape instead of
+  reparsing one line at a time;
+- the check-syntax adapter exposes lexical definitions, references, unused
+  binders/requires, and precise source spans;
 - expansion is restricted to a safe-language whitelist;
 - abstract evaluation is a conservative value-flow analysis, not a type system;
 - `abstract/unreachable-code` is a text heuristic, not a proof;
 - require/provide analysis is local or based on a simplified project graph;
 - rule exceptions become `linter/internal-error` diagnostics instead of being
   silently treated as a clean result;
+- syntax-aware review compatibility checks for binding/form shape, and an
+  optional bridge to the installed `raco review` implementation;
 - auto-fixes are text/syntax transformations and require review.
 
 Use the Scribble manual for the complete rule inventory, configuration keys,

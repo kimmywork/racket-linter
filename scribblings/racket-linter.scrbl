@@ -105,11 +105,11 @@ are available but opt-in.
   (list "style/definition-length" "text" "enabled" "Reports definitions over 66 lines")
   (list "style/file-length" "text" "enabled" "Reports files over 1000 lines")
   (list "style/naming-convention" "text" "disabled" "Reports underscores and camelCase")
-  (list "style/require-sort" "text" "disabled" "Reports unsorted require forms")
-  (list "style/provide-sort" "text" "disabled" "Reports unsorted provide forms")
+  (list "style/require-sort" "syntax" "disabled" "Syntax-aware phase/module ordering for require specs")
+  (list "style/provide-sort" "syntax" "disabled" "Syntax-aware ordering for provide specs")
   (list "style/extract-let" "text" "disabled" "Suggests extracting repeated expressions")
-  (list "style/simplify-cond" "text" "disabled" "Suggests else instead of a final #t clause")
-  (list "definition/unused" "text" "disabled" "Regex-based top-level unused definition heuristic")
+  (list "style/simplify-cond" "syntax" "disabled" "Inspects cond clauses and suggests else/if simplifications")
+  (list "definition/unused" "syntax" "disabled" "check-syntax-backed lexical unused-definition diagnostics")
   (list "reachability/undefined" "syntax" "disabled" "Reports references not resolved by the local scanner")
   (list "reachability/unused-require" "syntax" "disabled" "Reports unused required bindings using syntax scanning")
   (list "reachability/unused-require-expand" "expand" "disabled" "Reports unused requires after expansion")
@@ -117,7 +117,10 @@ are available but opt-in.
   (list "module/require-provide" "syntax" "disabled" "Reports provided names without local definitions")
   (list "abstract/type-error" "expand" "disabled" "Conservative definite non-procedure application checks")
   (list "abstract/unreachable-code" "text" "disabled" "Heuristic scan for code after exit, raise, or error")
-  (list "check-syntax/unused" "syntax" "disabled" "Uses DrRacket check-syntax callbacks when available")
+  (list "check-syntax/unused" "syntax" "disabled" "Uses DrRacket binding identity for unused binders and requires")
+  (list "review/syntax-quality" "syntax" "disabled" "Syntax-aware raco-review-compatible binding and form-shape checks")
+  (list "review/module-declaration" "text" "disabled" "Reports a missing #lang module declaration")
+  (list "review/raco-review" "text" "disabled" "Optional bridge to the installed raco-review rule implementation")
   (list "module/circular-dependency" "project" "enabled" "Reports cycles in the simplified require graph")
   (list "export/unused-project" "project" "disabled" "Reports exports unused by files in this project"))]
 
@@ -131,8 +134,10 @@ Rules declare one of these layers:
 
 @itemlist[
  @item{@tt{text} receives raw file text and runs for every file.}
- @item{@tt{syntax} receives syntax only for languages in the safe-language whitelist.}
- @item{@tt{expand} receives expanded syntax only for safe languages. Expansion errors become diagnostics.}
+ @item{@tt{syntax} receives syntax only for languages in the safe-language whitelist. Syntax-aware rules should use this source-preserving tree instead of reparsing raw text.}
+ @item{@tt{expand} receives expanded syntax only for safe languages. Read, syntax, and expansion failures become diagnostics and are never converted into an empty success result.}
+ @item{@tt{check-syntax/unused} and @tt{core/check-syntax} retain lexical definition/reference facts from DrRacket's traversal.}
+ @item{@tt{review/raco-review} is an opt-in compatibility backend and requires the @tt{review} package to be installed.}
  @item{@tt{both} runs in both the text and syntax phases.}
  @item{@tt{project} is implemented by the project analysis pass and receives the discovered file set.}
 ]
@@ -144,11 +149,11 @@ expansion can load modules and execute compile-time code.
 
 @itemlist[
  @item{@tt{analyze-abstract} accepts expanded syntax and a source path, and returns a list of diagnostics.}
- @item{The current domain includes top, bottom, numbers, strings, symbols, booleans, procedures, lists, and pairs.}
- @item{It detects applications of values proven to be non-procedures and simple known procedure arity errors.}
+ @item{The abstract domain includes top/bottom, scalar values, lists/pairs, vectors, multiple values, procedures with arity, unions, and lexical closure environments.}
+ @item{It detects definite non-procedure applications, known arity failures, numeric/list/vector contract failures, and constant-branch reachability cases.}
 ]
 
-The interpreter has a bounded fixpoint loop for recursive bindings, but it is
+The evaluator uses a bounded recursive-binding approximation and lexical identifier identity. It is
 not a Racket type checker and does not prove general program properties. Unknown
 values are represented by top and should not produce a definite type diagnostic.
 The separate @tt{abstract/unreachable-code} rule is currently a text heuristic;
@@ -192,6 +197,7 @@ The public core modules provide these values:
  @item{@tt{run-file} for file-level rule execution.}
  @item{@tt{merge-configs} for recursive default/user configuration merging.}
  @item{@tt{analyze-project}, @tt{build-dependency-graph}, and project diagnostics.}
+ @item{@tt{check-syntax-facts} returns definitions, lexical references, unused binder/require spans, and analysis errors.}
  @item{@tt{analyze-abstract} for conservative expanded-syntax analysis.}
 ]
 
@@ -219,7 +225,8 @@ an expansion failure.
 @section{Known Limitations}
 
 @itemlist[
- @item{The undefined-identifier rule is a local syntax scanner, not binding-identity analysis. It can require project-specific exclusions.}
+ @item{The undefined-identifier rule uses expansion/check-syntax failure information where available; its remaining local scanner is heuristic and opt-in.}
+ @item{The optional @tt{review/raco-review} bridge depends on the installed review package and preserves its version-specific behavior.}
  @item{Project export analysis cannot observe library consumers outside the scanned directory.}
  @item{The abstract interpreter is conservative and incomplete; it is not a full type system or theorem prover.}
  @item{The unreachable-code rule is text-based and should be treated as a heuristic.}
@@ -228,6 +235,60 @@ an expansion failure.
  @item{Configuration evaluation is trusted-code execution.}
  @item{Auto-fixes are syntax/text transformations and require review.}
 ]
+
+@section{Future Quality Checks}
+
+The following backlog is prioritized for code quality, stability, and
+maintainability rather than raw rule count. The local @tt{racket-review} test
+corpus is the compatibility reference for surface checks; the Racket
+Check Syntax API and @racketmodname[syntax/parse] are the semantic foundation.
+
+@tabular[#:style 'boxed
+ #:column-properties '(left left left left)
+ #:row-properties '(bottom-border ())
+ (list
+  (list @bold{Priority} @bold{Capability} @bold{Implementation} @bold{Value})
+  (list "P0" "Binding identity and precise source spans" "check-syntax facts plus expanded syntax" "Removes name-based false positives")
+  (list "P0" "Review-compatible structural checks" "source-preserving syntax walker" "Covers malformed/control-shape bugs before runtime")
+  (list "P0" "Expansion failure visibility" "engine result protocol and fixture tests" "Prevents false clean CI results")
+  (list "P1" "Phase-aware require/provide graph" "identifier-binding, module resolver, submodule/phase keys" "Improves cross-module stability")
+  (list "P1" "Suppressions and baselines" "line/module directives with rule-id validation" "Makes adoption practical without hiding failures")
+  (list "P1" "Safe fixes with applicability checks" "syntax spans, replacement previews, idempotence tests" "Reduces formatter-induced regressions")
+  (list "P1" "Complexity and maintainability metrics" "syntax counts for nesting, branches, definitions, duplicate forms" "Finds code that is hard to review")
+  (list "P2" "Security and resource checks" "literal require paths, dynamic-eval/load, shell/process/network use" "Catches risky operations with explicit policy")
+  (list "P2" "API compatibility and documentation checks" "provide/contract/struct signatures plus docs metadata" "Protects public library surfaces")
+  (list "P2" "Test-quality checks" "syntax recognition of test-case/check-equal?/check-exn assertions" "Detects weak or vacuous tests"))]
+
+@subsection{General Linter Lessons}
+
+The most useful features to borrow from mature tools such as Clippy, Ruff,
+ESLint, and ShellCheck are stable diagnostic identity, configuration profiles,
+ignore directives that name a rule, machine-readable output, deterministic
+parallel execution, fix previews, and tests that assert both positive and
+negative examples. Baseline files should record an exact rule ID, source span,
+and message fingerprint; a bare line-based ignore is too easy to hide
+regressions.
+
+Rules should be split into definite errors, high-confidence warnings, and
+advisory information. A rule that depends on heuristics should default to
+opt-in or emit an advisory level. Every fix should be idempotent, preserve
+source spans where possible, and have a no-op check after application.
+
+@subsection{S-Expression Opportunities}
+
+S-expressions make several high-value checks inexpensive and reliable without
+expansion: delimiter/paren-shape consistency, empty bodies, branch arity,
+duplicate binding names in one scope, shadowing, `cond` fallthrough, nested
+`if` shape, `match` fallthrough and impossible literal patterns, `case` quoted
+constants, `for` clause scopes, require/provide phase ordering, suspicious
+quoted code, repeated literal expressions, and literal conditions such as
+`(if #t ...)`. These should be source-syntax rules first and expanded rules
+only when binding identity or macro semantics is needed.
+
+The next implementation sequence is therefore: complete the phase-aware
+binding graph, finish the remaining `raco review` structural corpus, add
+validated suppressions/baselines and safe fixes, then add complexity/security/
+test-quality profiles behind explicit configuration.
 
 @section{Custom Rules}
 

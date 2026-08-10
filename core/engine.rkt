@@ -1,36 +1,22 @@
 #lang racket/base
 
-;; Engine module for racket-linter
-;;
-;; The engine is responsible for:
-;; 1. Reading and parsing Racket source files
-;; 2. Detecting the #lang declaration
-;; 3. Running rules based on their layer (text, syntax, expand)
-;; 4. Collecting and returning diagnostics
-;;
-;; The engine handles the safe language whitelist - files with non-standard
-;; #lang declarations are downgraded to text-only analysis.
+;; Engine for text, syntax, and expanded-syntax rule phases.
 
 (require
   racket/string
   racket/list
-  racket/match
   racket/path
-  racket/function
   racket/contract/base
   racket/port
+  syntax/modread
   "diagnostic.rkt"
-  "rule.rkt"
-  (for-syntax racket/base))
+  "rule.rkt")
 
 (provide
-  (contract-out
-    [run-file (-> (listof rule?) hash? path-string? (listof diagnostic?))])
-  merge-configs)
+ (contract-out
+  [run-file (-> (listof rule?) hash? path-string? (listof diagnostic?))])
+ merge-configs)
 
-;; Check if a language is in the safe whitelist.
-;; Only safe languages can be parsed with read-syntax and expanded.
-;; Non-safe languages are downgraded to text-only analysis.
 (define (safe-lang? lang-str)
   (member lang-str
           '("racket" "racket/base" "racket/contract" "racket/contract/base"
@@ -42,130 +28,148 @@
           string=?))
 
 (define (detect-lang-from-text text)
-  (define m (regexp-match #px"^#lang\\s+(\\S+)" text))
-  (and m (second m)))
-
-(define (read-syntax-safe path)
-  (with-handlers ([exn? (lambda (e) (list (diagnostic path 1 1 'error 'read-error (exn-message e))))])
-    (define text (call-with-input-file path port->string))
-    (define lang (detect-lang-from-text text))
-    (define text-no-lang
-      (if lang
-          (regexp-replace-first #px"^#lang\\s+\\S+\\s*" text "")
-          text))
-    (define in (open-input-string text-no-lang))
-    (define forms
-      (let loop ()
-        (define stx (read-syntax path in))
-        (if (eof-object? stx)
-            '()
-            (cons stx (loop)))))
-    (if (null? forms)
-        '()
-        (list
-         (if (= (length forms) 1)
-             (first forms)
-             (let ([begin-stx (datum->syntax #f 'begin (vector path 1 0 1 1))])
-               (datum->syntax #f (cons begin-stx forms))))))))
-
-;; Read all forms from a file for expansion
-(define (read-syntax-all path)
-  (with-handlers ([exn? (lambda (e) #f)])
-    (define text (call-with-input-file path port->string))
-    (define lang (detect-lang-from-text text))
-    (define text-no-lang
-      (if lang
-          (regexp-replace-first #px"^#lang\\s+\\S+\\s*" text "")
-          text))
-    (define in (open-input-string text-no-lang))
-    (define forms
-      (let loop ()
-        (define stx (read-syntax path in))
-        (if (eof-object? stx)
-            '()
-            (cons stx (loop)))))
-    (if (= (length forms) 1)
-        (first forms)
-        ;; Create a begin form with proper lexical context
-        (let ([begin-stx (datum->syntax #f 'begin (vector path 1 0 1 1))])
-          (datum->syntax #f (cons begin-stx forms))))))
+  (define match (regexp-match #px"^#lang\\s+(\\S+)" text))
+  (and match (second match)))
 
 (define (regexp-replace-first pattern text replacement)
   (define positions (regexp-match-positions pattern text))
   (if positions
       (let* ([start (caar positions)]
-             [end (cdar positions)]
-             [before (substring text 0 start)]
-             [after (substring text end)])
-        (string-append before replacement after))
+             [end (cdar positions)])
+        (string-append (substring text 0 start)
+                       replacement
+                       (substring text end)))
       text))
 
+(define (read-forms path)
+  (define text (call-with-input-file path port->string))
+  (define lang (detect-lang-from-text text))
+  (define source
+    (if lang
+        (regexp-replace-first #px"^#lang\\s+\\S+\\s*" text "")
+        text))
+  (define in (open-input-string source))
+  (let loop ([forms '()])
+    (define stx (read-syntax path in))
+    (if (eof-object? stx)
+        (reverse forms)
+        (loop (cons stx forms)))))
+
+(define (read-syntax-safe path)
+  (with-handlers ([exn?
+                   (lambda (exn)
+                     (list (diagnostic path 1 0 'error 'read-error
+                                       (exn-message exn))))])
+    (define text (call-with-input-file path port->string))
+    (define lang (detect-lang-from-text text))
+    (if lang
+        (list
+         (call-with-input-file path
+           (lambda (in)
+             (port-count-lines! in)
+             (with-module-reading-parameterization
+              (lambda () (read-syntax path in))))))
+        (let ([in (open-input-string text)])
+          (port-count-lines! in)
+          (define forms
+            (let loop ([result '()])
+              (define stx (read-syntax path in))
+              (if (eof-object? stx)
+                  (reverse result)
+                  (loop (cons stx result)))))
+          (cond
+            [(null? forms) '()]
+            [(null? (cdr forms)) (list (first forms))]
+            [else
+             (list (datum->syntax #f
+                                  (cons (datum->syntax #f 'begin) forms)
+                                  (vector path 1 0 1 1))) ])))))
+
+(define (read-syntax-all path)
+  (with-handlers ([exn?
+                   (lambda (exn)
+                     (list (diagnostic path 1 0 'error 'read-error
+                                       (exn-message exn))))])
+    (call-with-input-file path
+      (lambda (in)
+        (port-count-lines! in)
+        (with-module-reading-parameterization
+         (lambda () (read-syntax path in)))))))
+
 (define (expand-safe path stx)
-  (with-handlers ([exn? (lambda (e) (list (diagnostic path 1 1 'error 'expand-error (exn-message e))))])
-    (parameterize ([current-namespace (make-base-namespace)])
+  (with-handlers ([exn?
+                   (lambda (exn)
+                     (list (diagnostic path 1 0 'error 'expand-error
+                                       (exn-message exn))))])
+    (parameterize ([current-namespace (make-base-namespace)]
+                   [current-load-relative-directory
+                    (path-only (path->complete-path (string->path path)))])
       (expand stx))))
 
 (define (merge-configs default-config user-config)
-  (for/fold ([result default-config]) ([(k v) (in-hash user-config)])
-    (if (and (hash-has-key? result k) (hash? (hash-ref result k)) (hash? v))
-        (hash-set result k (merge-configs (hash-ref result k) v))
-        (hash-set result k v))))
+  (for/fold ([result default-config]) ([(key value) (in-hash user-config)])
+    (if (and (hash-has-key? result key)
+             (hash? (hash-ref result key))
+             (hash? value))
+        (hash-set result key
+                  (merge-configs (hash-ref result key) value))
+        (hash-set result key value))))
 
-;; Layer system:
-;; 'text   - runs on raw text (stx is #f), always executed
-;; 'syntax - runs on parsed syntax (stx is syntax?), only for safe languages
-;; 'expand - runs on expanded syntax (stx is expanded syntax?), only for safe languages
-;; 'both   - runs in BOTH text and syntax phases (stx is #f then syntax?)
-;; Cross-module rules need a separate dispatch mechanism beyond run-file.
-;; Expansion uses `expand` API which can have side effects; only for safe #lang.
+(define (rule-config rule config)
+  (merge-configs (rule-config-keys rule)
+                 (hash-ref config (rule-id rule) (hash))))
 
+(define (rule-enabled? rule config)
+  (hash-ref (rule-config rule config) 'enabled #t))
+
+(define (run-text-rules rules config path)
+  (for/fold ([result '()]) ([rule (in-list rules)]
+                            #:when (and (rule-enabled? rule config)
+                                        (eq? (rule-layer rule) 'text)))
+    (append result
+            ((rule-check rule) #f path (rule-config rule config)))))
+
+(define (run-syntax-rules rules config stx path)
+  (for/fold ([result '()]) ([rule (in-list rules)]
+                            #:when (and (rule-enabled? rule config)
+                                        (memq (rule-layer rule) '(syntax both))))
+    (append result
+            ((rule-check rule) stx path (rule-config rule config)))))
+
+(define (run-expand-rules rules config expanded path)
+  (for/fold ([result '()]) ([rule (in-list rules)]
+                            #:when (and (rule-enabled? rule config)
+                                        (eq? (rule-layer rule) 'expand)))
+    (append result
+            ((rule-check rule) expanded path (rule-config rule config)))))
+
+;; Text diagnostics always run. Safe languages additionally get parsed and,
+;; when requested by a rule, expanded. Read/expand errors are returned as
+;; diagnostics instead of being converted into an empty result.
 (define (run-file rules config path)
+  (define text-results (run-text-rules rules config path))
   (define text (call-with-input-file path port->string))
   (define lang (detect-lang-from-text text))
-  
-  (define text-layer-results
-    (foldl
-      (lambda (rule acc)
-        (define merged-config (merge-configs (rule-config-keys rule) (hash-ref config (rule-id rule) (hash))))
-        (define enabled? (hash-ref merged-config 'enabled #t))
-        (if (and enabled? (eq? (rule-layer rule) 'text))
-            (append acc ((rule-check rule) #f path merged-config))
-            acc))
-      '()
-      rules))
-  
-  (if (and lang (not (safe-lang? lang)))
-      text-layer-results
-      (let ([stx-list (read-syntax-safe path)])
-        (if (list? stx-list)
-            (let ([stx (first stx-list)])
-              (if (syntax? stx)
-                  (let* ([syntax-results
-                          (foldl
-                            (lambda (rule acc)
-                              (define merged-config (merge-configs (rule-config-keys rule) (hash-ref config (rule-id rule) (hash))))
-                              (define enabled? (hash-ref merged-config 'enabled #t))
-                              (if (and enabled? (memq (rule-layer rule) '(syntax both)))
-                                  (append acc ((rule-check rule) stx path merged-config))
-                                  acc))
-                            '()
-                            rules)]
-                         [expand-results
-                          (if (ormap (lambda (r) (eq? (rule-layer r) 'expand)) rules)
-                              (let* ([all-stx (read-syntax-all path)]
-                                     [expanded (if (syntax? all-stx) (expand-safe path all-stx) #f)])
-                                (if (syntax? expanded)
-                                    (foldl
-                                      (lambda (rule acc)
-                                        (define merged-config (merge-configs (rule-config-keys rule) (hash-ref config (rule-id rule) (hash))))
-                                        (define enabled? (hash-ref merged-config 'enabled #t))
-                                        (if (and enabled? (eq? (rule-layer rule) 'expand))
-                                            (append acc ((rule-check rule) expanded path merged-config))
-                                            acc))
-                                      '()
-                                      rules)
-                                    '()))
-                              '())])
-                    (append text-layer-results syntax-results expand-results))
-                  text-layer-results))
-            text-layer-results))))
+  (cond
+    [(and lang (not (safe-lang? lang))) text-results]
+    [else
+     (define syntax-result (read-syntax-safe path))
+     (cond
+       [(and (pair? syntax-result)
+             (diagnostic? (first syntax-result)))
+        (append text-results syntax-result)]
+       [(null? syntax-result) text-results]
+       [else
+        (define stx (first syntax-result))
+        (define syntax-results (run-syntax-rules rules config stx path))
+        (define expand-results
+          (if (ormap (lambda (rule)
+                       (and (rule-enabled? rule config)
+                            (eq? (rule-layer rule) 'expand)))
+                     rules)
+              (let ([expanded (expand-safe path (read-syntax-all path))])
+                (if (syntax? expanded)
+                    (run-expand-rules rules config expanded path)
+                    expanded))
+              '()))
+        (append text-results syntax-results expand-results)])]))

@@ -14,6 +14,8 @@
          "../rules/export/unused.rkt"
          "../rules/module/require-provide.rkt"
          "../rules/abstract/type-error.rkt" "../rules/abstract/unreachable-code.rkt"
+         "../rules/review/syntax-quality.rkt" "../rules/review/module-declaration.rkt"
+         "../rules/review/raco-review.rkt"
          "../rules/check-syntax/unused.rkt"
          (for-syntax racket/base))
 (provide run)
@@ -263,6 +265,7 @@
           reachability/unused-require-expand
           export/unused module/require-provide
           abstract/type-error abstract/unreachable-code
+          review/syntax-quality review/module-declaration review/raco-review
           check-syntax/unused))
   (define user-config-file
     (if config-file

@@ -1,142 +1,157 @@
 #lang racket/base
 
-;; Check-Syntax integration module for racket-linter
-;;
-;; This module provides integration with DrRacket's check-syntax API
-;; for precise detection of unused variables and unused requires.
-;;
-;; Uses make-traversal for richer binding information including:
-;; - Unused variables (syncheck:unused-binder)
-;; - Unused requires (syncheck:add-unused-require)
-;; - Definition locations
-;; - Binding arrows
+;; Precise binding facts collected from DrRacket's check-syntax traversal.
+;; The traversal is used as a semantic supplement to the local syntax walker:
+;; it knows lexical binding identity, phase-aware references, and require use.
 
 (require
   drracket/check-syntax
   racket/class
-  racket/contract
-  racket/port
-  racket/path
-  racket/string
+  racket/contract/base
   racket/list
-  racket/set
+  racket/path
+  racket/port
+  racket/string
   syntax/modread
   "diagnostic.rkt")
 
 (provide
-  (contract-out
-    [check-syntax-analyze (-> path-string? (listof diagnostic?))]))
+ (contract-out
+  [struct syntax-span
+          ([source path-string?]
+           [start exact-nonnegative-integer?]
+           [end exact-nonnegative-integer?]
+           [name any/c])]
+  [struct syntax-reference
+          ([source path-string?]
+           [start exact-nonnegative-integer?]
+           [end exact-nonnegative-integer?]
+           [name any/c]
+           [definition-source any/c]
+           [definition-start (or/c #f exact-nonnegative-integer?)]
+           [definition-end (or/c #f exact-nonnegative-integer?)])]
+  [struct syntax-facts
+          ([definitions (listof syntax-span?)]
+           [references (listof syntax-reference?)]
+           [unused-binders (listof syntax-span?)]
+           [unused-requires (listof syntax-span?)]
+           [errors (listof string?)])]
+  [check-syntax-facts (-> path-string? syntax-facts?)]
+  [check-syntax-analyze (-> path-string? (listof diagnostic?))]))
 
-;; Collector class that implements syncheck-annotations<%>
-;; to collect binding information, unused variables, etc.
-(define collector%
-  (class* object% (syncheck-annotations<%>)
-    (init-field src)
-    (define diagnostics '())
-    (define definitions (make-hash)) ; name -> (list start end)
-    (define references (make-hash)) ; name -> (list (list start end) ...)
+(struct syntax-span (source start end name) #:transparent)
+(struct syntax-reference
+  (source start end name definition-source definition-start definition-end)
+  #:transparent)
+(struct syntax-facts (definitions references unused-binders unused-requires errors)
+  #:transparent)
+
+(define (same-source? expected actual)
+  (and actual
+       (equal? (path->string (simplify-path (string->path expected)))
+               (path->string (simplify-path
+                              (if (path? actual) actual (string->path actual)))))))
+
+(define (collector%/for path)
+  (class (annotations-mixin object%)
+    (init-field source-path)
+    (define definitions '())
+    (define references '())
     (define unused-binders '())
     (define unused-requires '())
-    
     (super-new)
-    
-    ;; Required methods for syncheck-annotations<%>
-    (define/public (syncheck:add-definition-source src-obj start end name)
-      (hash-set! definitions name (list start end)))
-    
-    (define/public (syncheck:add-jump-to-definition src-obj start end name def-src def-start def-end)
-      (hash-update! references name (lambda (old) (cons (list start end) old)) '()))
-    
-    (define/public (syncheck:add-jump-to-definition/phase-level+space a b c d e f g) (void))
-    (define/public (syncheck:add-require-open-menu a b c d) (void))
-    (define/public (syncheck:add-mouse-over-status a b c d) (void))
-    (define/public (syncheck:add-arrow/name-dup/pxpy a b c d e f g h i j k l m n) (void))
-    (define/public (syncheck:add-tail-arrow a b c d) (void))
-    (define/public (syncheck:add-rename-menu a b c d) (void))
-    (define/public (syncheck:add-background-color a b c d) (void))
-    (define/public (syncheck:add-prefixed-require-reference a b c d e) (void))
-    (define/public (syncheck:add-arrow a b c d e f g h i j) (void))
-    (define/public (syncheck:find-source-object a) a)
-    (define/public (syncheck:add-text-type a b c d) (void))
-    (define/public (syncheck:add-definition-target a b c d e) (void))
-    (define/public (syncheck:color-range a b c d) (void))
-    (define/public (syncheck:add-docs-menu a b c d e f g h) (void))
-    (define/public (syncheck:add-id-set a b c d e f) (void))
-    (define/public (syncheck:add-arrow/name-dup a b c d e f g h i j) (void))
-    (define/public (syncheck:add-definition-target/phase-level+space a b c d e f) (void))
-    
-    ;; Called when unused variables are found
-    (define/public (syncheck:unused-binder src-obj start end)
-      (set! unused-binders (cons (list start end) unused-binders)))
-    
-    ;; Called when unused requires are found
-    (define/public (syncheck:add-unused-require src-obj start end)
-      (set! unused-requires (cons (list start end) unused-requires)))
-    
-    ;; Get collected data
-    (define/public (get-diagnostics) diagnostics)
-    (define/public (get-definitions) definitions)
-    (define/public (get-references) references)
-    (define/public (get-unused-binders) unused-binders)
-    (define/public (get-unused-requires) unused-requires)))
 
-;; Analyze a file using DrRacket's check-syntax API.
-;;
-;; This function uses make-traversal to get detailed information about
-;; the file's syntax, including:
-;; - Unused variables (syncheck:unused-binder)
-;; - Unused requires (syncheck:add-unused-require)
-;; - Definition locations
-;; - Binding arrows
-;;
-;; Returns a list of diagnostics for any issues found.
-(define (check-syntax-analyze path)
+    ;; Returning the path makes every callback directly attributable to the
+    ;; source file and excludes expansion-only syntax from the fact set.
+    (define/override (syncheck:find-source-object stx)
+      (and (same-source? source-path (syntax-source stx)) source-path))
+
+    (define/public (syncheck:add-definition-source source start end name)
+      (set! definitions (cons (syntax-span source-path start end name) definitions)))
+
+    (define/override (syncheck:add-definition-target source start end name mods)
+      (set! definitions (cons (syntax-span source-path start end name) definitions)))
+
+    (define/override (syncheck:add-jump-to-definition source start end name
+                                                       definition-source
+                                                       submodules)
+      (set! references
+            (cons (syntax-reference source-path start end name
+                                    (list definition-source submodules)
+                                    #f #f)
+                  references)))
+
+    (define/override (syncheck:unused-binder source start end)
+      (set! unused-binders
+            (cons (syntax-span source-path start end #f) unused-binders)))
+
+    (define/override (syncheck:add-unused-require source start end)
+      (set! unused-requires
+            (cons (syntax-span source-path start end #f) unused-requires)))
+
+    (define/public (facts)
+      (syntax-facts (reverse definitions)
+                    (reverse references)
+                    (reverse unused-binders)
+                    (reverse unused-requires)
+                    '()))))
+
+(define (read-module-syntax path)
+  (call-with-input-file path
+    (lambda (in)
+      (port-count-lines! in)
+      (with-module-reading-parameterization
+       (lambda () (read-syntax path in))))))
+
+(define (check-syntax-facts path)
+  (define collector (new (collector%/for path) [source-path path]))
+  (define errors '())
+  (define source-dir
+    (path-only (path->complete-path (string->path path))))
   (define ns (make-base-namespace))
-  (define src-dir (path-only (string->path path)))
-  (define collector (new collector% [src path]))
-  
-  (define-values (add-syntax done)
-    (make-traversal ns src-dir))
-  
-  (parameterize ([current-load-relative-directory src-dir]
-                 [current-namespace ns]
-                 [current-annotations collector])
+  (with-handlers ([exn:fail?
+                   (lambda (exn)
+                     (set! errors (list (exn-message exn))))])
     (define stx
-      (with-handlers ([exn:fail? (lambda (exn) #f)])
-        (call-with-input-file path
-          (lambda (in)
-            (with-module-reading-parameterization
-              (lambda () (read-syntax path in)))))))
-    
-    (when (syntax? stx)
-      (define expanded-stx
-        (with-handlers ([exn:fail? (lambda (exn) #f)])
-          (parameterize ([current-output-port (open-output-nowhere)])
-            (expand stx))))
-      
-      (when (syntax? expanded-stx)
-        (add-syntax expanded-stx)
+      (parameterize ([current-load-relative-directory source-dir]
+                     [current-namespace ns])
+        (read-module-syntax path)))
+    (unless (eof-object? stx)
+      (define-values (add-syntax done)
+        (make-traversal ns source-dir))
+      (parameterize ([current-load-relative-directory source-dir]
+                     [current-namespace ns]
+                     [current-annotations collector]
+                     [current-output-port (open-output-nowhere)])
+        (add-syntax (expand stx))
         (done))))
-  
-  ;; Collect diagnostics from the collector
-  (define diagnostics '())
-  
-  ;; Add unused binder diagnostics
-  (for ([binder (in-list (send collector get-unused-binders))])
-    (define start (first binder))
-    (define end (second binder))
-    (set! diagnostics
-          (cons (diagnostic path 1 1 'info 'check-syntax/unused-variable
-                            (format "Variable at position ~a-~a is defined but never used" start end))
-                diagnostics)))
-  
-  ;; Add unused require diagnostics
-  (for ([req (in-list (send collector get-unused-requires))])
-    (define start (first req))
-    (define end (second req))
-    (set! diagnostics
-          (cons (diagnostic path 1 1 'info 'check-syntax/unused-require
-                            (format "Unused require at position ~a-~a" start end))
-                diagnostics)))
-  
-  diagnostics)
+  (define facts (send collector facts))
+  (struct-copy syntax-facts facts [errors errors]))
+
+(define (source-position path position)
+  (define text (call-with-input-file path port->string))
+  (define bounded (min position (string-length text)))
+  (define line (add1 (for/sum ([ch (in-string (substring text 0 bounded))]
+                               #:when (char=? ch #\newline))
+                      1)))
+  (define last-newline
+    (for/fold ([result -1]) ([idx (in-range bounded)]
+                             #:when (char=? (string-ref text idx) #\newline))
+      idx))
+  (values line (max 0 (- bounded last-newline 1))))
+
+(define (span-diagnostic path span rule-id message)
+  (define-values (line col) (source-position path (syntax-span-start span)))
+  (diagnostic path line col 'info rule-id message))
+
+(define (check-syntax-analyze path)
+  (define facts (check-syntax-facts path))
+  (append
+   (for/list ([message (in-list (syntax-facts-errors facts))])
+     (diagnostic path 1 0 'error 'check-syntax/error message))
+   (for/list ([span (in-list (syntax-facts-unused-binders facts))])
+     (span-diagnostic path span 'check-syntax/unused-variable
+                      "binding is defined but never used"))
+   (for/list ([span (in-list (syntax-facts-unused-requires facts))])
+     (span-diagnostic path span 'check-syntax/unused-require
+                      "require is not used by this module"))))

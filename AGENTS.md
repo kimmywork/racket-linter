@@ -22,10 +22,11 @@ racket-linter/
   core/          - diagnostic, rule, engine
   rules/
     style/       - 样式规则（line-length, trailing-whitespace, newline-at-eof, sexpr-depth, definition-length, file-length）
-    definition/  - 定义检查（unused - 占位实现）
+    definition/  - 定义检查（unused - check-syntax-backed）
     reachability/- 可达性检查（undefined, unused-require）
     export/      - 导出检查（unused）
     module/      - 跨模块检查（require-provide）
+    review/      - syntax-aware raco-review compatibility checks and optional adapter
   cli/           - CLI 入口（lint.rkt）
   tests/         - 测试用例
   docs/          - 文档

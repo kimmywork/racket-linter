@@ -5,6 +5,7 @@
          racket/file
          racket/path
          racket/string
+         racket/list
          "../core/engine.rkt"
          "../core/diagnostic.rkt"
          "../core/rule.rkt"
@@ -184,8 +185,17 @@
   (check-equal? (length diags) 0)
   (delete-file f))
 
-;; ============================================================
-;; merge-configs
+(test-case "run-file: enabled expansion failures remain diagnostics"
+  (define f (make-temp "#lang racket/base\n(if #t 1)\n"))
+  (define diagnostics
+    (run-file (list abstract/type-error)
+              (hash 'abstract/type-error (hash 'enabled #t))
+              (path->string f)))
+  (check-equal? (length diagnostics) 1)
+  (check-equal? (diagnostic-rule-id (first diagnostics)) 'expand-error)
+  (delete-file f))
+
+
 ;; ============================================================
 
 (test-case "merge-configs: basic override"

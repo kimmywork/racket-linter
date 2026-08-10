@@ -1,30 +1,24 @@
 #lang racket/base
 
 (require
-  racket/list
-  racket/string
-  racket/port
   "../../core/rule.rkt"
   "../../core/diagnostic.rkt"
-  (for-syntax racket/base))
+  "../../core/check-syntax.rkt")
 
 (provide definition/unused)
 
+;; Compatibility rule backed by check-syntax lexical binding identity. It no
+;; longer reports every textual `define`; only binders proven unused by the
+;; expanded module are reported.
 (define-rule definition/unused
   #:id 'definition/unused
   #:severity 'info
   #:config-keys (hash 'enabled #f)
-  #:layer 'text
+  #:layer 'syntax
   (lambda (stx path config)
-    (define text (port->string (open-input-file path)))
-    (define lines (regexp-split #px"\n" text))
-    (for/fold ([acc '()]) ([line lines] [ln (in-naturals 1)])
-      (define trimmed (string-trim line))
-      (cond
-        [(regexp-match? #px"^\\(define[\\s]+(?:\\(?)([^\\s()]+)" trimmed)
-         (define m (regexp-match #px"^\\(define[\\s]+(?:\\(?)([^\\s()]+)" trimmed))
-         (if m
-             (append acc (list (diagnostic path ln 1 'info 'definition/unused
-                                                         (format "Definition ~a appears unused" (second m)))))
-             acc)]
-        [else acc]))))
+    (for/list ([finding (in-list (check-syntax-analyze path))]
+               #:when (eq? (diagnostic-rule-id finding)
+                           'check-syntax/unused-variable))
+      (struct-copy diagnostic finding
+                   [rule-id 'definition/unused]
+                   [message "definition is not referenced by this module"]))))
