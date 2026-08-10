@@ -19,7 +19,7 @@ raco setup --pkgs racket-linter
 raco lint .
 ```
 
-The current test suite has 333 passing tests. Re-run setup after changing
+The current test suite has 343 passing tests. Re-run setup after changing
 `info.rkt` or the registered `raco lint` command:
 
 ```sh
@@ -108,7 +108,8 @@ structured diagnostic pipeline.
   silently treated as a clean result;
 - syntax-aware review compatibility checks for binding/form shape, and an
   optional bridge to the installed `raco review` implementation;
-- auto-fixes are text/syntax transformations and require review;
+- auto-fixes are applicability-checked and idempotent; `--fix-preview` prints
+  source replacements without writing;
 - source suppressions are validated against registered rule IDs;
 - baseline entries use exact project-relative start locations and message fingerprints,
   and stale entries remain visible as warnings;

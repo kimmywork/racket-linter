@@ -3,7 +3,7 @@
          raco/command-name
          racket/string racket/path racket/list racket/set racket/contract/base racket/function racket/dict racket/port racket/system
          "../core/diagnostic.rkt" "../core/rule.rkt" "../core/engine.rkt" "../core/project.rkt"
-         "../core/baseline.rkt" "../core/module-graph.rkt" "../core/suppression.rkt"
+         "../core/baseline.rkt" "../core/module-graph.rkt" "../core/suppression.rkt" "../core/fix.rkt"
          "../rules/style/line-length.rkt" "../rules/style/trailing-whitespace.rkt"
          "../rules/style/newline-at-eof.rkt" "../rules/style/sexpr-depth.rkt"
          "../rules/style/definition-length.rkt" "../rules/style/file-length.rkt"
@@ -24,7 +24,8 @@
   (displayln "Usage: raco lint [options] <directory>")
   (displayln "")
   (displayln "Options:")
-  (displayln "  --fix              Auto-fix trailing whitespace and missing EOF newline")
+  (displayln "  --fix              Auto-fix only applicable, idempotent fixes")
+  (displayln "  --fix-preview      Preview safe replacements without writing files")
   (displayln "  --baseline <file>  Suppress diagnostics matching a baseline file")
   (displayln "  --write-baseline <file>  Write current diagnostics as a baseline")
   (displayln "  --format           Format all files using raco fmt (requires fmt package)")
@@ -46,15 +47,6 @@
               (diagnostic-path d) (diagnostic-line d) (diagnostic-col d)
               (diagnostic-severity d) (diagnostic-rule-id d) (diagnostic-message d)))
     diagnostics))
-
-;; Auto-fix support
-(define (fix-trailing-whitespace lines)
-  (map string-trim lines))
-
-(define (fix-newline-at-eof lines)
-  (if (and (not (null? lines)) (string=? (last lines) ""))
-      lines
-      (append lines (list ""))))
 
 (define (fix-require-sort lines)
   (for/list ([line (in-list lines)])
@@ -136,36 +128,21 @@
           (set! counter (+ counter 1)))
         result)))
 
-(define (apply-fixes path diagnostics)
+(define (apply-fixes path diagnostics preview?)
   (define text (call-with-input-file path port->string))
-  (define lines (string-split text "\n" #:trim? #f))
-  (define has-trailing? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/trailing-whitespace)) diagnostics))
-  (define has-no-eof-newline? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/newline-at-eof)) diagnostics))
-  (define has-require-sort? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/require-sort)) diagnostics))
-  (define has-provide-sort? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/provide-sort)) diagnostics))
-  (define has-simplify-cond? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/simplify-cond)) diagnostics))
-  (define has-extract-let? (findf (lambda (d) (eq? (diagnostic-rule-id d) 'style/extract-let)) diagnostics))
-  (define fixed-lines
-    (let ([l lines])
-      (when has-trailing?
-        (set! l (fix-trailing-whitespace l)))
-      (when has-no-eof-newline?
-        (set! l (fix-newline-at-eof l)))
-      (when has-require-sort?
-        (set! l (fix-require-sort l)))
-      (when has-provide-sort?
-        (set! l (fix-provide-sort l)))
-      (when has-simplify-cond?
-        (set! l (fix-simplify-cond l)))
-      (when has-extract-let?
-        (set! l (fix-extract-let l)))
-      l))
-  (define fixed-text (string-join fixed-lines "\n"))
-  (unless (string=? text fixed-text)
-    (displayln (format "Fixed: ~a" path))
-    (call-with-output-file path
-      (lambda (out) (display fixed-text out))
-      #:exists 'replace)))
+  (define outcome (apply-safe-fixes path text diagnostics))
+  (when (and (fix-result-applicable? outcome)
+             (fix-result-changed? outcome))
+    (for ([edit (in-list (fix-result-edits outcome))])
+      (eprintf "~a:~a:~a: ~a ~s -> ~s\n"
+               path (fix-edit-line edit) (fix-edit-col edit)
+               (fix-edit-rule-id edit)
+               (fix-edit-before edit) (fix-edit-replacement edit)))
+    (unless preview?
+      (displayln (format "Fixed: ~a" path))
+      (call-with-output-file path
+        (lambda (out) (display (fix-result-text outcome) out))
+        #:exists 'replace))))
 
 ;; Format support using raco fmt
 (define (format-file path-str)
@@ -190,6 +167,7 @@
 
 (define (parse-args args)
   (define fix? #f)
+  (define fix-preview? #f)
   (define format? #f)
   (define no-config? #f)
   (define config-file #f)
@@ -204,6 +182,7 @@
       (define arg (car remaining))
       (cond
         [(string=? arg "--fix") (set! fix? #t) (loop (cdr remaining))]
+        [(string=? arg "--fix-preview") (set! fix-preview? #t) (loop (cdr remaining))]
         [(string=? arg "--baseline")
          (when (null? (cdr remaining))
            (eprintf "Error: --baseline requires a file path\n")
@@ -253,10 +232,10 @@
     (when (and baseline-file write-baseline-file)
       (eprintf "Error: --baseline and --write-baseline cannot be used together\n")
       (usage))
-    (when (and fix? write-baseline-file)
-      (eprintf "Error: --fix and --write-baseline cannot be used together\n")
+    (when (and (or fix? fix-preview?) write-baseline-file)
+      (eprintf "Error: --fix/--fix-preview and --write-baseline cannot be used together\n")
       (usage))
-    (values fix? format? no-config? config-file baseline-file write-baseline-file
+    (values fix? fix-preview? format? no-config? config-file baseline-file write-baseline-file
             exclude-dirs parallel? output-format dir))
 
 (define (load-user-config path)
@@ -274,7 +253,7 @@
      (if (path? path) path (string->path path))))))
 
 (define (run args)
-  (define-values (fix? format? no-config? config-file baseline-file
+  (define-values (fix? fix-preview? format? no-config? config-file baseline-file
                        write-baseline-file exclude-dirs parallel? output-format dir)
     (parse-args args))
   (unless dir (usage))
@@ -413,17 +392,16 @@
       [else (values source-filtered-diagnostics '())]))
   (define all-diagnostics
     (append reported-diagnostics suppression-diagnostics baseline-diagnostics))
-  (when fix?
+  (when (or fix? fix-preview?)
     ;; Only diagnostics with an implemented fixer may cause a source file read.
     (define fixable-rule-ids
-      '(style/trailing-whitespace style/newline-at-eof style/require-sort
-        style/provide-sort style/simplify-cond style/extract-let))
+      '(style/trailing-whitespace style/newline-at-eof style/simplify-cond))
     (define by-file (make-hash))
     (for ([d (in-list all-diagnostics)]
           #:when (memq (diagnostic-rule-id d) fixable-rule-ids))
       (hash-update! by-file (diagnostic-path d) (lambda (old) (cons d old)) '()))
     (for ([(path diags) (in-hash by-file)])
-      (apply-fixes path diags)))
+      (apply-fixes path diags fix-preview?)))
   ;; Output diagnostics in the specified format
   (cond
     [(string=? output-format "json")

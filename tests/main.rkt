@@ -9,4 +9,5 @@
          "check-syntax-test.rkt"
          "engine-test.rkt"
          "policy-test.rkt"
+         "fix-test.rkt"
          "rule-regression-test.rkt")
