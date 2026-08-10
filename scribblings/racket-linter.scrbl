@@ -82,6 +82,8 @@ project configuration without sandboxing or reviewing it first.
  @item{@DFlag{exclude} @tt{<directory>} excludes matching paths; it can be repeated.}
  @item{@DFlag{parallel} analyzes files concurrently and collects results in file order.}
  @item{@DFlag{output} @tt{<text|json|sarif|junit>} selects the output format.}
+ @item{@DFlag{baseline} @tt{<file>} suppresses exact diagnostics recorded in a baseline.}
+ @item{@DFlag{write-baseline} @tt{<file>} writes the current unsuppressed diagnostics as a versioned baseline.}
 ]
 
 Only one project directory argument is accepted. JSON, SARIF, and JUnit output
@@ -131,7 +133,30 @@ The project-level export rule cannot know about consumers outside the scanned
 project. Library projects should normally disable it or use a project-specific
 entry-point policy.
 
-@section{Analysis Layers}
+@section{Suppressions and Baselines}
+
+A source suppression must name one or more registered rule IDs. The line and
+next-line forms affect only the diagnostic starting on that line; the range
+forms affect subsequent lines until enabled again:
+
+@verbatim{
+; racket-linter-disable-line style/line-length
+; racket-linter-disable-next-line style/line-length
+; racket-linter-disable style/line-length
+; racket-linter-enable style/line-length
+}
+
+Unknown IDs, malformed directives, and enables without an active disable are
+reported as errors. Suppression policy diagnostics cannot be suppressed by the
+same source file.
+
+Use @DFlag{write-baseline} to create a JSON baseline and @DFlag{baseline} to
+consume it in CI. Each entry records a project-relative path, rule ID, one-based
+line, zero-based column, and SHA-1 hash of the diagnostic message. A finding is
+suppressed only when all of those values match. Changed findings are therefore
+reported, and entries with no current finding emit a warning with rule ID
+@tt{baseline/stale-entry}. Baselines are generated after source suppressions
+have been validated and applied.
 
 Rules declare one of these layers:
 
@@ -196,6 +221,8 @@ The public core modules provide these values:
 
 @itemlist[
  @item{@tt{diagnostic}, @tt{diagnostic?}, and diagnostic accessors for locations and messages.}
+ @item{@tt{suppression-index}, @tt{read-suppressions}, and @tt{diagnostic-suppressed?} for validated source directives.}
+ @item{@tt{baseline-entry}, @tt{read-baseline}, @tt{write-baseline!}, and @tt{apply-baseline} for exact diagnostic baselines.}
  @item{@tt{rule}, @tt{rule?}, @tt{define-rule}, and rule accessors for rule registration.}
  @item{@tt{run-file} for file-level rule execution.}
  @item{@tt{merge-configs} for recursive default/user configuration merging.}
@@ -236,6 +263,8 @@ an expansion failure.
  @item{The unreachable-code rule is text-based and should be treated as a heuristic.}
  @item{The check-syntax adapter depends on DrRacket APIs and may not expose every binding diagnostic.}
  @item{The simplified require/provide graph does not fully model phases, submodules, collection resolution, or dynamic requires.}
+ @item{Suppressions currently target a diagnostic's starting line; end spans are not yet part of the diagnostic contract.}
+ @item{Baselines use message hashes, so intentional message changes require regenerating the baseline.}
  @item{Configuration evaluation is trusted-code execution.}
  @item{Auto-fixes are syntax/text transformations and require review.}
 ]

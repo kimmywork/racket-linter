@@ -8,4 +8,5 @@
          "project-test.rkt"
          "check-syntax-test.rkt"
          "engine-test.rkt"
+         "policy-test.rkt"
          "rule-regression-test.rkt")

@@ -1,9 +1,9 @@
 #lang racket/base
 (require json
          raco/command-name
-         racket/string racket/path racket/list racket/contract/base racket/function racket/dict racket/port racket/system
+         racket/string racket/path racket/list racket/set racket/contract/base racket/function racket/dict racket/port racket/system
          "../core/diagnostic.rkt" "../core/rule.rkt" "../core/engine.rkt" "../core/project.rkt"
-         "../core/module-graph.rkt"
+         "../core/baseline.rkt" "../core/module-graph.rkt" "../core/suppression.rkt"
          "../rules/style/line-length.rkt" "../rules/style/trailing-whitespace.rkt"
          "../rules/style/newline-at-eof.rkt" "../rules/style/sexpr-depth.rkt"
          "../rules/style/definition-length.rkt" "../rules/style/file-length.rkt"
@@ -25,6 +25,8 @@
   (displayln "")
   (displayln "Options:")
   (displayln "  --fix              Auto-fix trailing whitespace and missing EOF newline")
+  (displayln "  --baseline <file>  Suppress diagnostics matching a baseline file")
+  (displayln "  --write-baseline <file>  Write current diagnostics as a baseline")
   (displayln "  --format           Format all files using raco fmt (requires fmt package)")
   (displayln "  --no-config        Ignore .racket-linter.rkt config file")
   (displayln "  --config <file>    Specify custom config file path")
@@ -191,6 +193,8 @@
   (define format? #f)
   (define no-config? #f)
   (define config-file #f)
+  (define baseline-file #f)
+  (define write-baseline-file #f)
   (define exclude-dirs '())
   (define parallel? #f)
   (define output-format "text")
@@ -200,6 +204,18 @@
       (define arg (car remaining))
       (cond
         [(string=? arg "--fix") (set! fix? #t) (loop (cdr remaining))]
+        [(string=? arg "--baseline")
+         (when (null? (cdr remaining))
+           (eprintf "Error: --baseline requires a file path\n")
+           (usage))
+         (set! baseline-file (cadr remaining))
+         (loop (cddr remaining))]
+        [(string=? arg "--write-baseline")
+         (when (null? (cdr remaining))
+           (eprintf "Error: --write-baseline requires a file path\n")
+           (usage))
+         (set! write-baseline-file (cadr remaining))
+         (loop (cddr remaining))]
         [(string=? arg "--format") (set! format? #t) (loop (cdr remaining))]
         [(string=? arg "--no-config") (set! no-config? #t) (loop (cdr remaining))]
         [(string=? arg "--help") (usage 0)]
@@ -234,7 +250,14 @@
     (unless (member output-format '("text" "json" "sarif" "junit"))
       (eprintf "Error: unsupported output format: ~a\n" output-format)
       (usage))
-    (values fix? format? no-config? config-file exclude-dirs parallel? output-format dir))
+    (when (and baseline-file write-baseline-file)
+      (eprintf "Error: --baseline and --write-baseline cannot be used together\n")
+      (usage))
+    (when (and fix? write-baseline-file)
+      (eprintf "Error: --fix and --write-baseline cannot be used together\n")
+      (usage))
+    (values fix? format? no-config? config-file baseline-file write-baseline-file
+            exclude-dirs parallel? output-format dir))
 
 (define (load-user-config path)
   (with-handlers ([exn? (lambda (_) (hash))])
@@ -244,8 +267,16 @@
     (parameterize ([current-namespace (make-base-namespace)])
       (eval (read (open-input-string body))))))
 
+(define (canonical-path path)
+  (path->string
+   (simplify-path
+    (path->complete-path
+     (if (path? path) path (string->path path))))))
+
 (define (run args)
-  (define-values (fix? format? no-config? config-file exclude-dirs parallel? output-format dir) (parse-args args))
+  (define-values (fix? format? no-config? config-file baseline-file
+                       write-baseline-file exclude-dirs parallel? output-format dir)
+    (parse-args args))
   (unless dir (usage))
   (unless (directory-exists? dir)
     (eprintf "Error: ~a is not a directory\n" dir)
@@ -268,6 +299,17 @@
           abstract/type-error abstract/unreachable-code
           review/syntax-quality review/module-declaration review/raco-review
           check-syntax/unused))
+  (define known-rule-ids
+    (list->set
+     (append (map rule-id all-rules)
+             '(module/circular-dependency
+               export/unused-project
+               module/phase-parse
+               module/phase-unresolved-require
+               module/phase-cycle
+               read-error
+               expand-error
+               linter/internal-error))))
   (define user-config-file
     (if config-file
         (string->path config-file)
@@ -327,11 +369,58 @@
         #t))
      (append (analyze-project files)
              (check-phase-module-graph files))))
-  (define all-diagnostics (append diagnostics project-diagnostics))
+  (define raw-diagnostics (append diagnostics project-diagnostics))
+  (define suppression-indexes (make-hash))
+  (define suppression-diagnostics '())
+  (for ([file (in-list files)])
+    (define-values (index policy-diagnostics)
+      (read-suppressions file known-rule-ids))
+    (hash-set! suppression-indexes (canonical-path file) index)
+    (set! suppression-diagnostics
+          (append suppression-diagnostics policy-diagnostics)))
+  (define source-filtered-diagnostics
+    (filter
+     (lambda (finding)
+       (define index
+         (hash-ref suppression-indexes
+                   (canonical-path (diagnostic-path finding))
+                   #f))
+       (not (and index (diagnostic-suppressed? index finding))))
+     raw-diagnostics))
+  (define-values (reported-diagnostics baseline-diagnostics)
+    (cond
+      [write-baseline-file
+       (with-handlers ([exn?
+                        (lambda (failure)
+                          (values
+                           '()
+                           (list
+                            (diagnostic
+                             write-baseline-file 1 0 'error
+                             'baseline/write-error
+                             (format "Cannot write baseline: ~a"
+                                     (exn-message failure))))))])
+         (write-baseline! write-baseline-file dir source-filtered-diagnostics)
+         (eprintf "Wrote baseline: ~a (~a diagnostics)\n"
+                  write-baseline-file (length source-filtered-diagnostics))
+         (values '() '()))]
+      [baseline-file
+       (define-values (entries read-errors)
+         (read-baseline baseline-file known-rule-ids))
+       (if (pair? read-errors)
+           (values source-filtered-diagnostics read-errors)
+           (apply-baseline entries baseline-file dir source-filtered-diagnostics))]
+      [else (values source-filtered-diagnostics '())]))
+  (define all-diagnostics
+    (append reported-diagnostics suppression-diagnostics baseline-diagnostics))
   (when fix?
-    ;; Group diagnostics by file
+    ;; Only diagnostics with an implemented fixer may cause a source file read.
+    (define fixable-rule-ids
+      '(style/trailing-whitespace style/newline-at-eof style/require-sort
+        style/provide-sort style/simplify-cond style/extract-let))
     (define by-file (make-hash))
-    (for ([d (in-list all-diagnostics)])
+    (for ([d (in-list all-diagnostics)]
+          #:when (memq (diagnostic-rule-id d) fixable-rule-ids))
       (hash-update! by-file (diagnostic-path d) (lambda (old) (cons d old)) '()))
     (for ([(path diags) (in-hash by-file)])
       (apply-fixes path diags)))

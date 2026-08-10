@@ -19,7 +19,8 @@ Racket Linter 是一个可配置、可扩展的 Racket 代码检查工具，通�
 ## 目录结构
 ```
 racket-linter/
-  core/          - diagnostic, rule, engine
+  core/          - diagnostic, rule, engine, suppression, baseline
+
   rules/
     style/       - 样式规则（line-length, trailing-whitespace, newline-at-eof, sexpr-depth, definition-length, file-length）
     definition/  - 定义检查（unused - check-syntax-backed）

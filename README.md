@@ -19,7 +19,7 @@ raco setup --pkgs racket-linter
 raco lint .
 ```
 
-The current test suite has 325 passing tests. Re-run setup after changing
+The current test suite has 333 passing tests. Re-run setup after changing
 `info.rkt` or the registered `raco lint` command:
 
 ```sh
@@ -42,6 +42,24 @@ when diagnostics or a linter rule failure is present. Invalid options return a
 non-zero status. Only one project directory argument is accepted. JSON, SARIF,
 and JUnit output are structurally serialized and suitable for CI consumers.
 `--parallel` uses concurrent file analysis while preserving file-order output.
+
+Source suppressions use rule-named comments:
+
+```racket
+; racket-linter-disable-line style/line-length
+; racket-linter-disable-next-line style/line-length
+; racket-linter-disable style/line-length
+; racket-linter-enable style/line-length
+```
+
+Unknown rule IDs, malformed directives, and unmatched enables are errors. A
+baseline is a versioned JSON file generated with `--write-baseline <file>` and
+consumed with `--baseline <file>`. Entries contain a project-relative path,
+rule ID, one-based line, zero-based column, and SHA-1 message fingerprint.
+Only exact entries are suppressed; changed or removed entries produce a
+`baseline/stale-entry` warning. Baselines are created after source suppressions
+are applied, so they cannot be used to legitimize an invalid suppression
+directive.
 
 ## Configuration
 
@@ -90,7 +108,10 @@ structured diagnostic pipeline.
   silently treated as a clean result;
 - syntax-aware review compatibility checks for binding/form shape, and an
   optional bridge to the installed `raco review` implementation;
-- auto-fixes are text/syntax transformations and require review.
+- auto-fixes are text/syntax transformations and require review;
+- source suppressions are validated against registered rule IDs;
+- baseline entries use exact project-relative start locations and message fingerprints,
+  and stale entries remain visible as warnings;
 
 Use the Scribble manual for the complete rule inventory, configuration keys,
 custom rule API, output schemas, and known limitations.
