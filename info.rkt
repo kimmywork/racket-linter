@@ -1,8 +1,9 @@
 #lang info
 (define collection "racket-linter")
-(define version "0.2.0")
+(define version "0.2")
 (define deps '("base" "drracket-tool-text-lib"))
-(define build-deps '("rackunit-lib" "scribble-lib" "cover"))
+(define build-deps '("racket-doc"
+                     "rackunit-lib" "scribble-lib" "cover"))
 (define test-omit-paths '("tests"))
 (define scribblings '(("scribblings/racket-linter.scrbl" ())))
 (define pkg-desc "A configurable, extensible Racket linter with style, reachability, and abstract interpretation rules")
